@@ -63,8 +63,63 @@ function findDuplicates(shopName, city, threshold = 0.85, excludeId) {
   return matches.sort((a, b) => b.score - a.score);
 }
 
+async function autoSeed() {
+  // Auto-seed if database is empty (first deploy)
+  const count = queryOne('SELECT COUNT(*) as count FROM users');
+  if (!count || count.count === 0) {
+    console.log('Empty database detected — running auto-seed...');
+    const bcryptSeed = require('bcryptjs');
+    const seedData = require('./src/db/seed-data.json');
+
+    const adminHash = await bcryptSeed.hash('admin123', 12);
+    const repHash = await bcryptSeed.hash('rep123', 12);
+
+    execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+      ['adam@chcpaint.com', adminHash, 'Adam', 'Berube', 'admin']);
+    const { lastId: michelleId } = execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+      ['michelle@chcpaint.com', repHash, 'Michelle', 'Rep', 'rep']);
+    const { lastId: benId } = execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES (?,?,?,?,?)',
+      ['ben@chcpaint.com', repHash, 'Ben', 'Halliday', 'rep']);
+
+    let total = 0;
+    for (const row of (seedData['Michelles Accounts'] || [])) {
+      if (!row['Shop Name']) continue;
+      const { lastId } = execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,former_sherwin_client,tags) VALUES (?,?,?,?,?,?)',
+        [row['Shop Name'], row['City/Area']||null, michelleId, 'prospect', row['Former Sherwin Client? Y/N']==='Y'?1:0, '[]']);
+      if (row['Notes']) execute('INSERT INTO notes (account_id,created_by_id,content) VALUES (?,?,?)', [lastId, michelleId, '[Imported] '+row['Notes']]);
+      total++;
+    }
+    for (const row of (seedData['Bens Accounts'] || [])) {
+      if (!row['Shop Name']) continue;
+      execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,tags) VALUES (?,?,?,\'prospect\',\'[]\')', [row['Shop Name'], row['City/Area']||null, benId]);
+      total++;
+    }
+    for (const row of (seedData['Joint Accounts'] || [])) {
+      if (!row['Shop Name']) continue;
+      execute('INSERT INTO accounts (shop_name,address,city,contact_names,suppliers,paint_line,sundries,has_contract,mpo,num_techs,sq_footage,status,tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,\'active\',\'[]\')',
+        [row['Shop Name'],row['Address']||null,row['City/Area']||null,row['Contact(s)']||null,row['Supplier(s)']||null,row['Paint']||null,row['Sundries']||null,row['Contract? Y/N']==='Y'?1:0,row['MPO']||null,row['# of Techs']||null,row['Shop Sq. Footage']||null]);
+      total++;
+    }
+    for (const row of (seedData['Cold'] || [])) {
+      if (!row['Shop Name']) continue;
+      const { lastId } = execute('INSERT INTO accounts (shop_name,address,city,status,tags) VALUES (?,?,?,\'cold\',\'[]\')', [row['Shop Name'],row['Address']||null,row['City']||null]);
+      if (row['Reason']) execute('INSERT INTO notes (account_id,created_by_id,content) VALUES (?,?,?)', [lastId, benId, '[Cold - Reason] '+row['Reason']]);
+      total++;
+    }
+    for (const row of (seedData['DNC Request'] || [])) {
+      if (!row['Shop Name']) continue;
+      const rep = (row['Rep Pursuing']||'').toLowerCase().includes('michelle') ? michelleId : benId;
+      const { lastId } = execute('INSERT INTO accounts (shop_name,city,assigned_rep_id,status,tags) VALUES (?,?,?,\'dnc\',\'[]\')', [row['Shop Name'],row['City/Area']||null,rep]);
+      if (row['Notes']) execute('INSERT INTO notes (account_id,created_by_id,content) VALUES (?,?,?)', [lastId, rep, '[DNC - Reason] '+row['Notes']]);
+      total++;
+    }
+    console.log(`Auto-seed complete: 3 users, ${total} accounts imported`);
+  }
+}
+
 async function startServer() {
   await initDatabase();
+  await autoSeed();
   const app = express();
 
   app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
