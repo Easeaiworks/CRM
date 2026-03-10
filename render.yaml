@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: refinish-ai-crm
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 3001
+    healthCheckPath: /api/health
+    disk:
+      name: crm-data
+      mountPath: /app/backend/data
+      sizeGB: 1

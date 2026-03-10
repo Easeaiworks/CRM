@@ -1,0 +1,110 @@
+export interface User {
+  id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: 'rep' | 'manager' | 'admin';
+}
+
+export interface Account {
+  id: number;
+  shop_name: string;
+  address: string | null;
+  city: string | null;
+  area: string | null;
+  province: string | null;
+  contact_names: string | null;
+  phone: string | null;
+  email: string | null;
+  account_type: string;
+  assigned_rep_id: number | null;
+  rep_first_name?: string;
+  rep_last_name?: string;
+  status: 'prospect' | 'active' | 'cold' | 'dnc' | 'churned';
+  suppliers: string | null;
+  paint_line: string | null;
+  allied_products: string | null;
+  sundries: string | null;
+  has_contract: number;
+  mpo: string | null;
+  num_techs: number | null;
+  sq_footage: string | null;
+  annual_revenue: number | null;
+  former_sherwin_client: number;
+  follow_up_date: string | null;
+  last_contacted_at: string | null;
+  tags: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Note {
+  id: number;
+  account_id: number;
+  created_by_id: number;
+  first_name: string;
+  last_name: string;
+  content: string;
+  is_voice_transcribed: number;
+  created_at: string;
+}
+
+export interface Activity {
+  id: number;
+  account_id: number;
+  rep_id: number;
+  first_name: string;
+  last_name: string;
+  activity_type: string;
+  description: string | null;
+  shop_name?: string;
+  created_at: string;
+}
+
+export interface SalesData {
+  id: number;
+  account_id: number | null;
+  rep_id: number | null;
+  sale_amount: number;
+  sale_date: string;
+  month: string;
+  memo: string | null;
+  customer_name: string | null;
+  shop_name?: string;
+  rep_first_name?: string;
+  rep_last_name?: string;
+}
+
+export interface DashboardMetrics {
+  statusCounts: { status: string; count: number }[];
+  monthlyRevenue: { month: string; total: number; count: number }[];
+  topAccounts: { shop_name: string; city: string; total_revenue: number; sale_count: number }[];
+  recentActivities: Activity[];
+  dormantCount: number;
+  totalAccounts: number;
+}
+
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages?: number;
+}
+
+export type StatusType = 'prospect' | 'active' | 'cold' | 'dnc' | 'churned';
+
+export const STATUS_LABELS: Record<StatusType, string> = {
+  prospect: 'Prospect',
+  active: 'Active Customer',
+  cold: 'Cold',
+  dnc: 'Do Not Contact',
+  churned: 'Churned'
+};
+
+export const STATUS_COLORS: Record<StatusType, string> = {
+  prospect: 'badge-prospect',
+  active: 'badge-active',
+  cold: 'badge-cold',
+  dnc: 'badge-dnc',
+  churned: 'badge-churned'
+};
