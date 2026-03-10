@@ -96,6 +96,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </p>
           </div>
         </div>
+        <p className="text-xs text-navy-500 text-center mt-6">Powered by Refinish AI</p>
       </div>
     </div>
   );
