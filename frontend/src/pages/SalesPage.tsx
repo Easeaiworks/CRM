@@ -27,17 +27,23 @@ interface CustomerSummary {
   salesperson: string;
 }
 
-function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: CustomerSummary[] } {
+function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: CustomerSummary[]; reportPeriod: string } {
   const lines = text.split('\n');
   const records: ParsedSale[] = [];
   const summaries: CustomerSummary[] = [];
   let currentCustomer = '';
   let customerLines: ParsedSale[] = [];
   let headerPassed = false;
+  let reportPeriod = '';
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
+
+    // Detect report period from header (e.g. "January 2026-March 2026")
+    if (!headerPassed && line.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i)) {
+      reportPeriod = line.trim();
+    }
 
     // Skip header section - detect by column header row
     if (line.includes(',ID#,Date,Quantity,Item/Activity,Amount,')) {
@@ -141,7 +147,17 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
     });
   }
 
-  return { records, summaries };
+  // Build actual date range from parsed records if no report period found
+  if (!reportPeriod && records.length > 0) {
+    const allDates = records.map(r => r.date).filter(Boolean).sort();
+    if (allDates.length > 0) {
+      const first = new Date(allDates[0]);
+      const last = new Date(allDates[allDates.length - 1]);
+      reportPeriod = `${first.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${last.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+    }
+  }
+
+  return { records, summaries, reportPeriod };
 }
 
 function parseCSVLine(line: string): string[] {
@@ -181,7 +197,7 @@ export default function SalesPage({ user }: Props) {
   const [showImport, setShowImport] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [importing, setImporting] = useState(false);
-  const [parsePreview, setParsePreview] = useState<{ records: ParsedSale[]; summaries: CustomerSummary[] } | null>(null);
+  const [parsePreview, setParsePreview] = useState<{ records: ParsedSale[]; summaries: CustomerSummary[]; reportPeriod: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadSales(); }, []);
@@ -250,6 +266,25 @@ export default function SalesPage({ user }: Props) {
 
   return (
     <div>
+      {/* Date range banner */}
+      {sales.length > 0 && (() => {
+        const dates = sales.map(s => s.sale_date).filter(Boolean).sort();
+        if (dates.length === 0) return null;
+        const first = new Date(dates[0] + 'T00:00:00');
+        const last = new Date(dates[dates.length - 1] + 'T00:00:00');
+        return (
+          <div className="bg-brand-50 border border-brand-200 rounded-xl px-5 py-3 mb-6 flex items-center justify-between">
+            <div>
+              <span className="text-sm text-brand-700 font-medium">Sales data for: </span>
+              <span className="text-sm text-brand-900 font-bold">
+                {first.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} &ndash; {last.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+            <span className="text-xs text-brand-600">{sales.length} records</span>
+          </div>
+        );
+      })()}
+
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Sales Tracking</h1>
@@ -282,6 +317,11 @@ export default function SalesPage({ user }: Props) {
           {parsePreview && (
             <div className="mt-4 space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                {parsePreview.reportPeriod && (
+                  <p className="text-blue-900 font-bold mb-1">
+                    Report Period: {parsePreview.reportPeriod}
+                  </p>
+                )}
                 <p className="text-blue-800 font-medium">
                   Parsed {parsePreview.summaries.length} customers with {parsePreview.records.length} line items
                 </p>
