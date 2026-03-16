@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { User } from '../../types';
 import AISearchBar from '../search/AISearchBar';
+import { useVoiceNavigation } from '../../hooks/useVoiceNavigation';
 
 interface LayoutProps {
   user: User;
@@ -14,14 +15,18 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const { isListening, feedback, startListening, stopListening, isSupported: voiceNavSupported } = useVoiceNavigation(
+    (path) => navigate(path)
+  );
+
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: '📊' },
-    { path: '/accounts', label: 'Accounts', icon: '🏢' },
-    { path: '/sales', label: 'Sales', icon: '💰' },
+    { path: '/', label: 'Dashboard', icon: '\u{1F4CA}' },
+    { path: '/accounts', label: 'Accounts', icon: '\u{1F3E2}' },
+    { path: '/sales', label: 'Sales', icon: '\u{1F4B0}' },
   ];
 
   if (user.role === 'admin' || user.role === 'manager') {
-    navItems.push({ path: '/admin', label: 'Admin', icon: '⚙️' });
+    navItems.push({ path: '/admin', label: 'Admin', icon: '\u{2699}\u{FE0F}' });
   }
 
   const isActive = (path: string) =>
@@ -59,9 +64,38 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
             <AISearchBar onNavigate={(path) => navigate(path)} />
           </div>
 
-          {/* User menu */}
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
+          {/* Voice nav + User menu */}
+          <div className="flex items-center gap-2">
+            {/* Voice Navigation Button */}
+            {voiceNavSupported && (
+              <div className="relative">
+                <button
+                  onClick={isListening ? stopListening : startListening}
+                  className={`p-2 rounded-lg transition-all ${
+                    isListening
+                      ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30'
+                      : 'text-navy-300 hover:text-white hover:bg-navy-800'
+                  }`}
+                  title={isListening ? 'Stop voice command' : 'Voice command (say "go to dashboard", "find Maple Leaf")'}
+                >
+                  {isListening && (
+                    <span className="absolute inset-0 rounded-lg bg-brand-500 animate-ping opacity-30" />
+                  )}
+                  <svg className="w-5 h-5 relative" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                  </svg>
+                </button>
+                {/* Voice feedback toast */}
+                {feedback && (
+                  <div className="absolute right-0 top-full mt-2 bg-navy-800 text-white text-xs px-3 py-2 rounded-lg shadow-xl whitespace-nowrap z-50 border border-navy-700">
+                    {feedback}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="text-right hidden sm:block ml-1">
               <div className="text-sm font-medium">{user.first_name} {user.last_name}</div>
               <div className="text-xs text-navy-300 capitalize">{user.role}</div>
             </div>

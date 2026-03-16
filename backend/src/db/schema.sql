@@ -113,3 +113,25 @@ CREATE INDEX IF NOT EXISTS idx_sales_month ON sales_data(month);
 CREATE INDEX IF NOT EXISTS idx_sales_rep ON sales_data(rep_id);
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC);
+
+-- Notification preferences (add to users table)
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN phone TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN notification_email TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN sms_enabled BOOLEAN DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN email_enabled BOOLEAN DEFAULT true;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN daily_digest_time TEXT DEFAULT '07:30';
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;

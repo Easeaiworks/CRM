@@ -25,6 +25,12 @@ export default function AccountDetailPage({ user }: Props) {
   const [activityType, setActivityType] = useState('call');
   const [activityDesc, setActivityDesc] = useState('');
 
+  // Follow-up scheduling
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpNotes, setFollowUpNotes] = useState('');
+  const [savingFollowUp, setSavingFollowUp] = useState(false);
+
   const { isListening, startListening, stopListening, isSupported } = useVoiceInput(
     (text) => setNewNote(prev => prev + (prev ? ' ' : '') + text)
   );
@@ -73,6 +79,25 @@ export default function AccountDetailPage({ user }: Props) {
       loadAccount();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const scheduleFollowUp = async () => {
+    if (!followUpDate) return;
+    setSavingFollowUp(true);
+    try {
+      await api.post(`/accounts/${id}/follow-up`, {
+        follow_up_date: followUpDate,
+        follow_up_notes: followUpNotes || null
+      });
+      setShowFollowUp(false);
+      setFollowUpDate('');
+      setFollowUpNotes('');
+      loadAccount();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingFollowUp(false);
     }
   };
 
@@ -279,6 +304,68 @@ export default function AccountDetailPage({ user }: Props) {
                 />
                 <button onClick={logActivity} className="btn-primary">Log</button>
                 <button onClick={() => setShowActivityForm(false)} className="btn-ghost">Cancel</button>
+              </div>
+            )}
+          </div>
+
+          {/* Follow-up Scheduling */}
+          <div className="card">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h3 className="font-bold text-navy-900">Follow-up</h3>
+                {account.follow_up_date && !showFollowUp && (
+                  <p className="text-xs text-navy-500 mt-1">
+                    Scheduled: <span className={`font-medium ${new Date(account.follow_up_date) < new Date() ? 'text-red-600' : 'text-amber-600'}`}>
+                      {new Date(account.follow_up_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {new Date(account.follow_up_date) < new Date() && ' (overdue)'}
+                    </span>
+                  </p>
+                )}
+              </div>
+              {!showFollowUp && (
+                <button onClick={() => { setShowFollowUp(true); setFollowUpDate(account.follow_up_date || ''); }} className="btn-ghost text-sm">
+                  {account.follow_up_date ? 'Reschedule' : 'Schedule'}
+                </button>
+              )}
+            </div>
+            {showFollowUp && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={followUpDate}
+                    onChange={e => setFollowUpDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="input-field flex-1"
+                  />
+                  <div className="flex gap-1">
+                    {[1, 3, 7, 14].map(days => (
+                      <button
+                        key={days}
+                        onClick={() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + days);
+                          setFollowUpDate(d.toISOString().split('T')[0]);
+                        }}
+                        className="btn-ghost text-xs px-2 py-1"
+                      >
+                        +{days}d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input
+                  placeholder="Notes (optional) e.g. Call about pricing quote"
+                  value={followUpNotes}
+                  onChange={e => setFollowUpNotes(e.target.value)}
+                  className="input-field"
+                />
+                <div className="flex gap-2">
+                  <button onClick={scheduleFollowUp} disabled={savingFollowUp || !followUpDate} className="btn-primary flex-1">
+                    {savingFollowUp ? 'Saving...' : 'Set Follow-up'}
+                  </button>
+                  <button onClick={() => setShowFollowUp(false)} className="btn-ghost">Cancel</button>
+                </div>
               </div>
             )}
           </div>

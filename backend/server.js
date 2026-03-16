@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const cron = require('node-cron');
 const { initDatabase, queryAll, queryOne, execute } = require('./src/db/init');
 
 const PORT = process.env.PORT || 3001;
@@ -447,6 +448,266 @@ async function startServer() {
       const results = await queryAll(`SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE ${where.join(' AND ')} ORDER BY a.shop_name LIMIT 50`, params);
       res.json({ type: 'accounts', results, query: q });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── NOTIFICATION ROUTES ───
+  app.get('/api/notifications/settings', authenticate, async (req, res) => {
+    try {
+      const settings = await queryOne(
+        'SELECT phone, notification_email, sms_enabled, email_enabled, daily_digest_time FROM users WHERE id=$1',
+        [req.user.userId]
+      );
+      if (!settings) return res.status(404).json({ error: 'User not found' });
+      res.json({ settings });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.put('/api/notifications/settings', authenticate, async (req, res) => {
+    try {
+      const { phone, notification_email, sms_enabled, email_enabled, daily_digest_time } = req.body;
+      const updates = ['updated_at = NOW()'];
+      const params = [];
+      let idx = 1;
+
+      if (phone !== undefined) { updates.push(`phone = $${idx++}`); params.push(phone || null); }
+      if (notification_email !== undefined) { updates.push(`notification_email = $${idx++}`); params.push(notification_email || null); }
+      if (sms_enabled !== undefined) { updates.push(`sms_enabled = $${idx++}`); params.push(sms_enabled ? true : false); }
+      if (email_enabled !== undefined) { updates.push(`email_enabled = $${idx++}`); params.push(email_enabled ? true : false); }
+      if (daily_digest_time !== undefined) { updates.push(`daily_digest_time = $${idx++}`); params.push(daily_digest_time || '07:30'); }
+
+      params.push(req.user.userId);
+      await execute(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+
+      const updated = await queryOne('SELECT phone, notification_email, sms_enabled, email_enabled, daily_digest_time FROM users WHERE id=$1', [req.user.userId]);
+      res.json({ settings: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Helper function to generate daily digest
+  async function generateDigestForUser(userId) {
+    const user = await queryOne('SELECT * FROM users WHERE id=$1', [userId]);
+    if (!user) return null;
+
+    // Get follow-ups due today or overdue
+    const dueFollowUps = await queryAll(
+      'SELECT a.* FROM accounts a WHERE a.deleted_at IS NULL AND a.assigned_rep_id = $1 AND a.follow_up_date IS NOT NULL AND a.follow_up_date <= CURRENT_DATE ORDER BY a.follow_up_date ASC',
+      [userId]
+    );
+
+    // Get dormant accounts (no contact in 14+ days)
+    const dormantAccounts = await queryAll(
+      "SELECT a.* FROM accounts a WHERE a.deleted_at IS NULL AND a.assigned_rep_id = $1 AND a.status IN ('prospect', 'active') AND (a.last_contacted_at IS NULL OR a.last_contacted_at < NOW() - INTERVAL '14 days') ORDER BY a.last_contacted_at ASC NULLS FIRST LIMIT 10",
+      [userId]
+    );
+
+    // Get new notes from other team members in last 24 hours
+    const newNotes = await queryAll(
+      'SELECT n.*, a.shop_name, u.first_name, u.last_name FROM notes n JOIN accounts a ON n.account_id = a.id JOIN users u ON n.created_by_id = u.id WHERE a.assigned_rep_id = $1 AND n.created_by_id != $1 AND n.created_at > NOW() - INTERVAL \'24 hours\' ORDER BY n.created_at DESC',
+      [userId]
+    );
+
+    return {
+      user,
+      dueFollowUps,
+      dormantAccounts,
+      newNotes
+    };
+  }
+
+  app.post('/api/notifications/send-digest', authenticate, async (req, res) => {
+    try {
+      // Admin-only check
+      const user = await queryOne('SELECT role FROM users WHERE id=$1', [req.user.userId]);
+      if (user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+      const { user_id } = req.body;
+      const userIds = user_id ? [user_id] : (await queryAll('SELECT id FROM users WHERE is_active = true')).map(u => u.id);
+
+      const results = [];
+      for (const uid of userIds) {
+        const digest = await generateDigestForUser(uid);
+        if (!digest) continue;
+
+        const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+        const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+        const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+        const sendgridApiKey = process.env.SENDGRID_API_KEY;
+        const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
+
+        // Build digest message
+        const digestText = `Daily Digest for ${digest.user.first_name}\n\nDue Follow-ups: ${digest.dueFollowUps.length}\nDormant Accounts: ${digest.dormantAccounts.length}\nNew Notes: ${digest.newNotes.length}`;
+
+        // Send SMS if enabled
+        if (digest.user.sms_enabled && digest.user.phone && twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
+          try {
+            const twilio = require('twilio');
+            const client = twilio(twilioAccountSid, twilioAuthToken);
+            await client.messages.create({
+              body: digestText,
+              from: twilioPhoneNumber,
+              to: digest.user.phone
+            });
+            results.push({ userId: uid, sms: 'sent' });
+          } catch (e) {
+            console.warn(`SMS send failed for user ${uid}: ${e.message}`);
+            results.push({ userId: uid, sms: 'failed', error: e.message });
+          }
+        }
+
+        // Send email if enabled
+        if (digest.user.email_enabled && digest.user.notification_email && sendgridApiKey && sendgridFromEmail) {
+          try {
+            const sgMail = require('@sendgrid/mail');
+            sgMail.setApiKey(sendgridApiKey);
+            const htmlContent = `<h2>Daily Digest for ${digest.user.first_name}</h2>
+              <p><strong>Due Follow-ups:</strong> ${digest.dueFollowUps.length}</p>
+              <p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
+              <p><strong>New Notes from Team:</strong> ${digest.newNotes.length}</p>`;
+
+            await sgMail.send({
+              to: digest.user.notification_email,
+              from: sendgridFromEmail,
+              subject: `Daily Digest - ${new Date().toLocaleDateString()}`,
+              html: htmlContent
+            });
+            results.push({ userId: uid, email: 'sent' });
+          } catch (e) {
+            console.warn(`Email send failed for user ${uid}: ${e.message}`);
+            results.push({ userId: uid, email: 'failed', error: e.message });
+          }
+        }
+      }
+
+      res.json({ message: 'Digest sent', results });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get('/api/notifications/preview', authenticate, async (req, res) => {
+    try {
+      const digest = await generateDigestForUser(req.user.userId);
+      if (!digest) return res.status(404).json({ error: 'Unable to generate digest' });
+
+      res.json({
+        preview: {
+          dueFollowUps: digest.dueFollowUps.map(a => ({ id: a.id, shop_name: a.shop_name, follow_up_date: a.follow_up_date })),
+          dormantAccounts: digest.dormantAccounts.map(a => ({ id: a.id, shop_name: a.shop_name, last_contacted_at: a.last_contacted_at })),
+          newNotes: digest.newNotes.map(n => ({ id: n.id, shop_name: n.shop_name, author: `${n.first_name} ${n.last_name}`, created_at: n.created_at, content: n.content.substring(0, 100) }))
+        }
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── FOLLOW-UP ROUTES ───
+  app.post('/api/accounts/:id/follow-up', authenticate, async (req, res) => {
+    try {
+      const { follow_up_date, follow_up_notes } = req.body;
+      if (!follow_up_date) return res.status(400).json({ error: 'follow_up_date required' });
+
+      // Update account with follow-up date
+      await execute('UPDATE accounts SET follow_up_date = $1, updated_at = NOW() WHERE id = $2', [follow_up_date, req.params.id]);
+
+      // Create note for follow-up
+      const noteContent = `[Follow-up scheduled for ${follow_up_date}] ${follow_up_notes || ''}`;
+      await execute('INSERT INTO notes (account_id, created_by_id, content) VALUES ($1, $2, $3)', [req.params.id, req.user.userId, noteContent]);
+
+      const account = await queryOne('SELECT * FROM accounts WHERE id=$1', [req.params.id]);
+      res.json({ account });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get('/api/follow-ups', authenticate, async (req, res) => {
+    try {
+      const isRep = req.user.role === 'rep';
+      let sql = 'SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.deleted_at IS NULL AND a.follow_up_date IS NOT NULL AND a.follow_up_date >= CURRENT_DATE';
+      const params = [];
+
+      if (isRep) {
+        sql += ' AND a.assigned_rep_id = $1';
+        params.push(req.user.userId);
+      }
+
+      sql += ' ORDER BY a.follow_up_date ASC LIMIT 50';
+      const followUps = await queryAll(sql, params);
+      res.json({ followUps });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get('/api/follow-ups/overdue', authenticate, async (req, res) => {
+    try {
+      const isRep = req.user.role === 'rep';
+      let sql = 'SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE a.deleted_at IS NULL AND a.follow_up_date IS NOT NULL AND a.follow_up_date < CURRENT_DATE';
+      const params = [];
+
+      if (isRep) {
+        sql += ' AND a.assigned_rep_id = $1';
+        params.push(req.user.userId);
+      }
+
+      sql += ' ORDER BY a.follow_up_date ASC LIMIT 50';
+      const overdue = await queryAll(sql, params);
+      res.json({ overdue });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── CRON JOB FOR DAILY DIGEST ───
+  const digestCron = process.env.DIGEST_CRON || '30 7 * * 1-5';
+  cron.schedule(digestCron, async () => {
+    console.log('Running daily digest...');
+    try {
+      const users = await queryAll('SELECT id FROM users WHERE is_active = true AND (sms_enabled = true OR email_enabled = true)');
+      for (const user of users) {
+        const digest = await generateDigestForUser(user.id);
+        if (!digest) continue;
+
+        const userData = digest.user;
+        const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+        const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+        const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+        const sendgridApiKey = process.env.SENDGRID_API_KEY;
+        const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
+
+        const digestText = `Daily Digest for ${userData.first_name}\n\nDue Follow-ups: ${digest.dueFollowUps.length}\nDormant Accounts: ${digest.dormantAccounts.length}\nNew Notes: ${digest.newNotes.length}`;
+
+        // Send SMS
+        if (userData.sms_enabled && userData.phone && twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
+          try {
+            const twilio = require('twilio');
+            const client = twilio(twilioAccountSid, twilioAuthToken);
+            await client.messages.create({
+              body: digestText,
+              from: twilioPhoneNumber,
+              to: userData.phone
+            });
+          } catch (e) {
+            console.warn(`SMS send failed for user ${userData.id}: ${e.message}`);
+          }
+        }
+
+        // Send email
+        if (userData.email_enabled && userData.notification_email && sendgridApiKey && sendgridFromEmail) {
+          try {
+            const sgMail = require('@sendgrid/mail');
+            sgMail.setApiKey(sendgridApiKey);
+            const htmlContent = `<h2>Daily Digest for ${userData.first_name}</h2>
+              <p><strong>Due Follow-ups:</strong> ${digest.dueFollowUps.length}</p>
+              <p><strong>Dormant Accounts:</strong> ${digest.dormantAccounts.length}</p>
+              <p><strong>New Notes from Team:</strong> ${digest.newNotes.length}</p>`;
+
+            await sgMail.send({
+              to: userData.notification_email,
+              from: sendgridFromEmail,
+              subject: `Daily Digest - ${new Date().toLocaleDateString()}`,
+              html: htmlContent
+            });
+          } catch (e) {
+            console.warn(`Email send failed for user ${userData.id}: ${e.message}`);
+          }
+        }
+      }
+      console.log(`Digest cron completed for ${users.length} users`);
+    } catch (e) {
+      console.error('Digest cron error:', e.message);
+    }
   });
 
   // ─── HEALTH ───
