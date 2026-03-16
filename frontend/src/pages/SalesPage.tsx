@@ -287,7 +287,7 @@ export default function SalesPage({ user }: Props) {
 
   const loadSales = async () => {
     try {
-      const data = await api.get('/sales', { limit: '2000' });
+      const data = await api.get('/sales', { limit: '0' });
       setSales(data.sales);
     } catch (err) {
       console.error(err);

@@ -328,11 +328,21 @@ async function startServer() {
       if (rep_id) { where.push(`s.rep_id=$${idx++}`); params.push(rep_id); }
       if (account_id) { where.push(`s.account_id=$${idx++}`); params.push(account_id); }
       const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
-      const pg = parseInt(page); const lim = parseInt(limit);
-      const sales = await queryAll(`SELECT s.*, a.shop_name, u.first_name as rep_first_name, u.last_name as rep_last_name FROM sales_data s LEFT JOIN accounts a ON s.account_id=a.id LEFT JOIN users u ON s.rep_id=u.id ${w} ORDER BY s.sale_date DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...params, lim, (pg-1)*lim]);
+      const lim = parseInt(limit);
+      const pg = parseInt(page);
       const tot = await queryOne(`SELECT COUNT(*) as total FROM sales_data s ${w}`, params);
-      res.json({ sales, pagination: { page: pg, limit: lim, total: parseInt(tot?.total) || 0 } });
+      const totalCount = parseInt(tot?.total) || 0;
+
+      let sales;
+      if (lim === 0) {
+        // limit=0 means fetch all records (no pagination)
+        sales = await queryAll(`SELECT s.*, a.shop_name, u.first_name as rep_first_name, u.last_name as rep_last_name FROM sales_data s LEFT JOIN accounts a ON s.account_id=a.id LEFT JOIN users u ON s.rep_id=u.id ${w} ORDER BY s.sale_date DESC`,
+          params);
+      } else {
+        sales = await queryAll(`SELECT s.*, a.shop_name, u.first_name as rep_first_name, u.last_name as rep_last_name FROM sales_data s LEFT JOIN accounts a ON s.account_id=a.id LEFT JOIN users u ON s.rep_id=u.id ${w} ORDER BY s.sale_date DESC LIMIT $${idx++} OFFSET $${idx++}`,
+          [...params, lim, (pg-1)*lim]);
+      }
+      res.json({ sales, pagination: { page: pg, limit: lim, total: totalCount } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
