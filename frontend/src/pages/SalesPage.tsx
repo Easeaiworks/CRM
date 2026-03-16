@@ -25,6 +25,7 @@ interface CustomerSummary {
   line_count: number;
   date_range: string;
   salesperson: string;
+  lineItems: ParsedSale[];
 }
 
 function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: CustomerSummary[]; reportPeriod: string } {
@@ -57,7 +58,6 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
 
     // Check for customer total row
     if (line.includes(' Total:,')) {
-      // Finalize this customer
       if (currentCustomer && customerLines.length > 0) {
         const totalAmount = customerLines.reduce((s, r) => s + r.amount, 0);
         const totalProfit = customerLines.reduce((s, r) => s + r.profit, 0);
@@ -70,15 +70,15 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
           line_count: customerLines.length,
           date_range: dates.length > 0 ? `${dates[0]} - ${dates[dates.length - 1]}` : '',
           salesperson,
+          lineItems: [...customerLines],
         });
         customerLines = [];
       }
       continue;
     }
 
-    // Check if this is a customer name row (doesn't start with comma, no amount columns)
+    // Check if this is a customer name row
     if (!line.startsWith(',') && !line.startsWith('"') && !line.match(/^\d/)) {
-      // Could be a customer name - check if it looks like a data row
       const parts = line.split(',');
       if (parts.length <= 3 && !line.includes('$')) {
         currentCustomer = line.trim();
@@ -89,12 +89,10 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
 
     // Parse line item rows (start with comma = indented under customer)
     if (line.startsWith(',') && currentCustomer) {
-      // Remove leading comma, then parse carefully handling quoted values
       const rawLine = line.substring(1);
       const parts = parseCSVLine(rawLine);
 
       if (parts.length >= 6) {
-        const id = parts[0]?.trim() || '';
         const date = parts[1]?.trim() || '';
         const quantity = parseInt(parts[2]?.trim() || '0');
         const item = parts[3]?.trim() || '';
@@ -109,7 +107,6 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
         const productLine = parts[9]?.trim() || '';
         const salesperson = parts[10]?.trim() || '';
 
-        // Skip if no valid date or amount
         if (date && date.match(/\d+\/\d+\/\d+/) && amount !== 0) {
           const record: ParsedSale = {
             customer_name: currentCustomer,
@@ -131,7 +128,7 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
     }
   }
 
-  // Catch last customer if no total row at end
+  // Catch last customer
   if (currentCustomer && customerLines.length > 0) {
     const totalAmount = customerLines.reduce((s, r) => s + r.amount, 0);
     const totalProfit = customerLines.reduce((s, r) => s + r.profit, 0);
@@ -144,10 +141,10 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
       line_count: customerLines.length,
       date_range: dates.length > 0 ? `${dates[0]} - ${dates[dates.length - 1]}` : '',
       salesperson,
+      lineItems: [...customerLines],
     });
   }
 
-  // Build actual date range from parsed records if no report period found
   if (!reportPeriod && records.length > 0) {
     const allDates = records.map(r => r.date).filter(Boolean).sort();
     if (allDates.length > 0) {
@@ -180,7 +177,6 @@ function parseCSVLine(line: string): string[] {
 }
 
 function formatDate(dateStr: string): string {
-  // Convert M/D/YYYY to YYYY-MM-DD
   const parts = dateStr.split('/');
   if (parts.length === 3) {
     const month = parts[0].padStart(2, '0');
@@ -198,13 +194,17 @@ export default function SalesPage({ user }: Props) {
   const [importResult, setImportResult] = useState<any>(null);
   const [importing, setImporting] = useState(false);
   const [parsePreview, setParsePreview] = useState<{ records: ParsedSale[]; summaries: CustomerSummary[]; reportPeriod: string } | null>(null);
+  const [expandedPreview, setExpandedPreview] = useState<Set<number>>(new Set());
+  const [expandedSale, setExpandedSale] = useState<string | null>(null);
+  // Keep last imported line items for drill-down on main table
+  const [lastImportedLines, setLastImportedLines] = useState<ParsedSale[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadSales(); }, []);
 
   const loadSales = async () => {
     try {
-      const data = await api.get('/sales', { limit: '100' });
+      const data = await api.get('/sales', { limit: '500' });
       setSales(data.sales);
     } catch (err) {
       console.error(err);
@@ -225,8 +225,18 @@ export default function SalesPage({ user }: Props) {
       const parsed = parseAccountEdgeCSV(text);
       setParsePreview(parsed);
       setImportResult(null);
+      setExpandedPreview(new Set());
     };
     reader.readAsText(file);
+  };
+
+  const togglePreviewRow = (index: number) => {
+    setExpandedPreview(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   };
 
   const confirmImport = async (mode: 'summary' | 'detailed') => {
@@ -236,7 +246,6 @@ export default function SalesPage({ user }: Props) {
     try {
       let records;
       if (mode === 'summary') {
-        // Import one record per customer with their total
         records = parsePreview.summaries.map(s => ({
           customer_name: s.customer_name,
           amount: s.total_amount,
@@ -244,7 +253,6 @@ export default function SalesPage({ user }: Props) {
           memo: `${s.line_count} line items, Profit: $${s.total_profit.toFixed(2)}${s.salesperson ? ', Rep: ' + s.salesperson : ''}`,
         }));
       } else {
-        // Import every line item
         records = parsePreview.records.map(r => ({
           customer_name: r.customer_name,
           amount: r.amount,
@@ -252,6 +260,9 @@ export default function SalesPage({ user }: Props) {
           memo: `${r.item} (Qty: ${r.quantity})${r.category ? ' [' + r.category + ']' : ''}${r.salesperson ? ' - ' + r.salesperson : ''}`,
         }));
       }
+
+      // Store line items for drill-down on main table
+      setLastImportedLines(parsePreview.records);
 
       const data = await api.post('/sales/import', { records });
       setImportResult(data);
@@ -263,6 +274,23 @@ export default function SalesPage({ user }: Props) {
       setImporting(false);
     }
   };
+
+  // Group sales by customer for the main table
+  const groupedSales = sales.reduce<Record<string, SalesData[]>>((acc, sale) => {
+    const key = sale.customer_name || sale.shop_name || 'Unmatched';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(sale);
+    return acc;
+  }, {});
+
+  const customerTotals = Object.entries(groupedSales).map(([name, items]) => ({
+    name,
+    total: items.reduce((s, i) => s + (i.sale_amount || 0), 0),
+    count: items.length,
+    shop_name: items[0]?.shop_name || null,
+    dates: items.map(i => i.sale_date).filter(Boolean).sort(),
+    items,
+  })).sort((a, b) => b.total - a.total);
 
   return (
     <div>
@@ -280,7 +308,7 @@ export default function SalesPage({ user }: Props) {
                 {first.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} &ndash; {last.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
               </span>
             </div>
-            <span className="text-xs text-brand-600">{sales.length} records</span>
+            <span className="text-xs text-brand-600">{sales.length} records &middot; {customerTotals.length} customers</span>
           </div>
         );
       })()}
@@ -288,7 +316,7 @@ export default function SalesPage({ user }: Props) {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Sales Tracking</h1>
-          <p className="text-navy-500 text-sm mt-1">Import from AccountEdge or log sales manually</p>
+          <p className="text-navy-500 text-sm mt-1">Import from AccountEdge or log sales manually. Click any customer to see transactions.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { setShowImport(!showImport); setParsePreview(null); setImportResult(null); }} className="btn-primary">
@@ -313,7 +341,7 @@ export default function SalesPage({ user }: Props) {
             className="input-field"
           />
 
-          {/* Parse Preview */}
+          {/* Parse Preview with expandable rows */}
           {parsePreview && (
             <div className="mt-4 space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -328,13 +356,15 @@ export default function SalesPage({ user }: Props) {
                 <p className="text-sm text-blue-600 mt-1">
                   Total revenue: ${parsePreview.summaries.reduce((s, c) => s + c.total_amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
+                <p className="text-xs text-blue-500 mt-1">Click any customer row to see their line-item transactions</p>
               </div>
 
-              {/* Customer summary table */}
-              <div className="max-h-64 overflow-y-auto border border-navy-100 rounded-lg">
+              {/* Customer summary table with expandable rows */}
+              <div className="max-h-96 overflow-y-auto border border-navy-100 rounded-lg">
                 <table className="w-full text-sm">
-                  <thead className="bg-navy-50 sticky top-0">
+                  <thead className="bg-navy-50 sticky top-0 z-10">
                     <tr>
+                      <th className="text-left py-2 px-3 text-xs font-medium text-navy-500 w-6"></th>
                       <th className="text-left py-2 px-3 text-xs font-medium text-navy-500">Customer</th>
                       <th className="text-right py-2 px-3 text-xs font-medium text-navy-500">Revenue</th>
                       <th className="text-right py-2 px-3 text-xs font-medium text-navy-500">Profit</th>
@@ -344,13 +374,58 @@ export default function SalesPage({ user }: Props) {
                   </thead>
                   <tbody>
                     {parsePreview.summaries.map((s, i) => (
-                      <tr key={i} className="border-t border-navy-50">
-                        <td className="py-2 px-3 font-medium text-navy-900">{s.customer_name}</td>
-                        <td className="py-2 px-3 text-right text-green-600">${s.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                        <td className="py-2 px-3 text-right text-navy-600">${s.total_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                        <td className="py-2 px-3 text-right text-navy-500">{s.line_count}</td>
-                        <td className="py-2 px-3 text-navy-500">{s.salesperson || '-'}</td>
-                      </tr>
+                      <>
+                        <tr
+                          key={`summary-${i}`}
+                          onClick={() => togglePreviewRow(i)}
+                          className="border-t border-navy-50 cursor-pointer hover:bg-brand-50 transition-colors"
+                        >
+                          <td className="py-2 px-3 text-navy-400">
+                            <span className={`inline-block transition-transform ${expandedPreview.has(i) ? 'rotate-90' : ''}`}>&#9654;</span>
+                          </td>
+                          <td className="py-2 px-3 font-medium text-brand-700">{s.customer_name}</td>
+                          <td className="py-2 px-3 text-right text-green-600 font-medium">${s.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td className="py-2 px-3 text-right text-navy-600">${s.total_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td className="py-2 px-3 text-right text-navy-500">{s.line_count}</td>
+                          <td className="py-2 px-3 text-navy-500">{s.salesperson || '-'}</td>
+                        </tr>
+                        {expandedPreview.has(i) && (
+                          <tr key={`detail-${i}`}>
+                            <td colSpan={6} className="p-0">
+                              <div className="bg-navy-50 border-y border-navy-100">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-navy-400">
+                                      <th className="text-left py-1.5 px-3 pl-10">Date</th>
+                                      <th className="text-left py-1.5 px-3">Item</th>
+                                      <th className="text-right py-1.5 px-3">Qty</th>
+                                      <th className="text-right py-1.5 px-3">Amount</th>
+                                      <th className="text-right py-1.5 px-3">COGS</th>
+                                      <th className="text-right py-1.5 px-3">Profit</th>
+                                      <th className="text-left py-1.5 px-3">Category</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {s.lineItems.map((item, j) => (
+                                      <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
+                                        <td className="py-1.5 px-3 pl-10 text-navy-600">{item.date}</td>
+                                        <td className="py-1.5 px-3 font-medium text-navy-800">{item.item}</td>
+                                        <td className="py-1.5 px-3 text-right text-navy-600">{item.quantity}</td>
+                                        <td className="py-1.5 px-3 text-right text-green-600">${item.amount.toFixed(2)}</td>
+                                        <td className="py-1.5 px-3 text-right text-navy-500">${item.cogs.toFixed(2)}</td>
+                                        <td className={`py-1.5 px-3 text-right ${item.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                          ${item.profit.toFixed(2)}
+                                        </td>
+                                        <td className="py-1.5 px-3 text-navy-500">{item.category || '-'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     ))}
                   </tbody>
                 </table>
@@ -403,7 +478,7 @@ export default function SalesPage({ user }: Props) {
         </div>
       )}
 
-      {/* Sales list */}
+      {/* Main Sales Table - grouped by customer with expandable rows */}
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -418,31 +493,118 @@ export default function SalesPage({ user }: Props) {
           <table className="w-full">
             <thead>
               <tr className="border-b border-navy-100">
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Date</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase w-6"></th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Customer</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Amount</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Memo</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Revenue</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Transactions</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Date Range</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Source</th>
               </tr>
             </thead>
             <tbody>
-              {sales.map((sale) => (
-                <tr key={sale.id} className="border-b border-navy-50 hover:bg-navy-50">
-                  <td className="py-3 px-4 text-sm text-navy-600">{sale.sale_date}</td>
-                  <td className="py-3 px-4 text-sm font-medium text-navy-900">
-                    {sale.shop_name || sale.customer_name || 'Unmatched'}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-right font-medium text-green-600">
-                    ${sale.sale_amount?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-navy-500">{sale.memo || '-'}</td>
-                  <td className="py-3 px-4">
-                    <span className={`badge ${sale.imported_from_accountedge ? 'bg-purple-100 text-purple-800' : 'bg-navy-100 text-navy-700'}`}>
-                      {sale.imported_from_accountedge ? 'AccountEdge' : 'Manual'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {customerTotals.map((ct) => {
+                const isExpanded = expandedSale === ct.name;
+                const lineItems = lastImportedLines.filter(l =>
+                  l.customer_name === ct.name ||
+                  (ct.shop_name && l.customer_name === ct.shop_name)
+                );
+                return (
+                  <>
+                    <tr
+                      key={ct.name}
+                      onClick={() => setExpandedSale(isExpanded ? null : ct.name)}
+                      className="border-b border-navy-50 cursor-pointer hover:bg-brand-50 transition-colors"
+                    >
+                      <td className="py-3 px-4 text-navy-400">
+                        <span className={`inline-block transition-transform text-xs ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                      </td>
+                      <td className="py-3 px-4 text-sm font-medium text-brand-700">
+                        {ct.shop_name || ct.name}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-right font-bold text-green-600">
+                        ${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-right text-navy-500">
+                        {ct.count}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-navy-500">
+                        {ct.dates.length > 0 && (
+                          <>
+                            {new Date(ct.dates[0] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {ct.dates.length > 1 && (
+                              <> &ndash; {new Date(ct.dates[ct.dates.length - 1] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="badge bg-purple-100 text-purple-800">AccountEdge</span>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${ct.name}-detail`}>
+                        <td colSpan={6} className="p-0">
+                          <div className="bg-navy-50 border-y border-navy-100">
+                            {/* Show line items from last import if available */}
+                            {lineItems.length > 0 ? (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-navy-400">
+                                    <th className="text-left py-1.5 px-4 pl-10">Date</th>
+                                    <th className="text-left py-1.5 px-3">Item</th>
+                                    <th className="text-right py-1.5 px-3">Qty</th>
+                                    <th className="text-right py-1.5 px-3">Amount</th>
+                                    <th className="text-right py-1.5 px-3">COGS</th>
+                                    <th className="text-right py-1.5 px-3">Profit</th>
+                                    <th className="text-left py-1.5 px-3">Category</th>
+                                    <th className="text-left py-1.5 px-3">Product Line</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {lineItems.map((item, j) => (
+                                    <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
+                                      <td className="py-1.5 px-4 pl-10 text-navy-600">{item.date}</td>
+                                      <td className="py-1.5 px-3 font-medium text-navy-800">{item.item}</td>
+                                      <td className="py-1.5 px-3 text-right text-navy-600">{item.quantity}</td>
+                                      <td className="py-1.5 px-3 text-right text-green-600">${item.amount.toFixed(2)}</td>
+                                      <td className="py-1.5 px-3 text-right text-navy-500">${item.cogs.toFixed(2)}</td>
+                                      <td className={`py-1.5 px-3 text-right ${item.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                        ${item.profit.toFixed(2)}
+                                      </td>
+                                      <td className="py-1.5 px-3 text-navy-500">{item.category || '-'}</td>
+                                      <td className="py-1.5 px-3 text-navy-500">{item.product_line || '-'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              /* Fall back to showing individual DB records */
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-navy-400">
+                                    <th className="text-left py-1.5 px-4 pl-10">Date</th>
+                                    <th className="text-right py-1.5 px-3">Amount</th>
+                                    <th className="text-left py-1.5 px-3">Details</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {ct.items.map((sale, j) => (
+                                    <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
+                                      <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
+                                      <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
+                                      <td className="py-1.5 px-3 text-navy-600">{sale.memo || '-'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
             </tbody>
           </table>
         </div>
