@@ -120,29 +120,32 @@ export default function AdminPage({ user }: Props) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-navy-900 mb-6">Admin Panel</h1>
+      <h1 className="text-xl sm:text-2xl font-bold text-navy-900 mb-4 sm:mb-6">Admin Panel</h1>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-navy-100 rounded-lg p-1 w-fit">
-        {[
-          { key: 'users', label: 'User Management' },
-          { key: 'notifications', label: 'Notifications' },
-          { key: 'data', label: 'Data Management' },
-          { key: 'audit', label: 'Audit Log' }
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => {
-              setActiveTab(tab.key as any);
-              if (tab.key === 'notifications') loadNotificationSettings();
-            }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              activeTab === tab.key ? 'bg-white text-navy-900 shadow-sm' : 'text-navy-500 hover:text-navy-700'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Tabs — scrollable on mobile */}
+      <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 mb-4 sm:mb-6">
+        <div className="flex gap-1 bg-navy-100 rounded-lg p-1 w-fit min-w-max">
+          {[
+            { key: 'users', label: 'Users', labelFull: 'User Management' },
+            { key: 'notifications', label: 'Alerts', labelFull: 'Notifications' },
+            { key: 'data', label: 'Data', labelFull: 'Data Management' },
+            { key: 'audit', label: 'Audit', labelFull: 'Audit Log' }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setActiveTab(tab.key as any);
+                if (tab.key === 'notifications') loadNotificationSettings();
+              }}
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === tab.key ? 'bg-white text-navy-900 shadow-sm' : 'text-navy-500 hover:text-navy-700'
+              }`}
+            >
+              <span className="sm:hidden">{tab.label}</span>
+              <span className="hidden sm:inline">{tab.labelFull}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'users' && (

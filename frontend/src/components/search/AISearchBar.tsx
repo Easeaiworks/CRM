@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../../services/api';
-import { useVoiceInput } from '../../hooks/useVoiceInput';
+import { useVoiceNavigation } from '../../hooks/useVoiceNavigation';
 import { Account, Note, STATUS_COLORS } from '../../types';
 
 interface AISearchBarProps {
@@ -15,9 +15,17 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
   const [showResults, setShowResults] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const { isListening, startListening, stopListening, isSupported } = useVoiceInput(
-    (text) => {
-      setQuery(prev => prev + ' ' + text);
+  // Unified voice: uses voice navigation hook which handles nav, customer lookup, search, etc.
+  const { isListening, feedback, startListening, stopListening, isSupported } = useVoiceNavigation(
+    (path) => {
+      setQuery('');
+      setShowResults(false);
+      onNavigate(path);
+    },
+    (searchQuery) => {
+      // Voice search fallback — run it through the AI search
+      setQuery(searchQuery);
+      runSearch(searchQuery);
     }
   );
 
@@ -32,12 +40,12 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
+  const runSearch = async (q: string) => {
+    if (!q.trim()) return;
     setIsSearching(true);
     setShowResults(true);
     try {
-      const data = await api.post('/search', { query: query.trim() });
+      const data = await api.post('/search', { query: q.trim() });
       setResults(data.results || []);
       setResultType(data.type || 'accounts');
     } catch (err) {
@@ -48,6 +56,12 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
     }
   };
 
+  const handleSearch = async () => {
+    await runSearch(query);
+    // Clear query after executing
+    setTimeout(() => setQuery(''), 100);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch();
     if (e.key === 'Escape') setShowResults(false);
@@ -55,8 +69,11 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
 
   return (
     <div ref={wrapperRef} className="relative w-full">
-      <div className="flex items-center bg-navy-800 rounded-lg border border-navy-700 focus-within:border-brand-500 transition-colors">
-        <svg className="w-4 h-4 text-navy-400 ml-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className={`flex items-center bg-navy-800 rounded-lg border transition-colors ${
+        isListening ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-navy-700 focus-within:border-brand-500'
+      }`}>
+        {/* Search icon */}
+        <svg className="w-4 h-4 text-navy-400 ml-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
             d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
@@ -66,20 +83,23 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setShowResults(true)}
-          placeholder="Search... try: prospects in Brantford"
-          className="flex-1 bg-transparent text-white text-sm px-3 py-2 outline-none placeholder-navy-400"
+          placeholder={isListening ? 'Listening...' : 'Search or say a command...'}
+          className="flex-1 bg-transparent text-white text-sm px-3 py-2 outline-none placeholder-navy-400 min-w-0"
         />
+        {/* Single unified mic button */}
         {isSupported && (
           <button
             onClick={isListening ? stopListening : startListening}
-            className={`p-2 rounded-lg mr-1 transition-colors ${
-              isListening ? 'text-brand-400 bg-brand-900/30' : 'text-navy-400 hover:text-white'
+            className={`p-2 rounded-lg mr-1 transition-all flex-shrink-0 ${
+              isListening
+                ? 'text-white bg-brand-500 shadow-lg shadow-brand-500/30'
+                : 'text-navy-400 hover:text-white hover:bg-navy-700'
             }`}
-            title={isListening ? 'Stop voice input' : 'Start voice input'}
+            title={isListening ? 'Stop listening' : 'Voice command — say "dashboard", "parliament invoices", etc.'}
           >
             {isListening ? (
               <div className="relative">
-                <div className="absolute inset-0 bg-brand-500/30 rounded-full voice-pulse" />
+                <span className="absolute inset-0 rounded-full bg-brand-400 animate-ping opacity-40" />
                 <svg className="w-4 h-4 relative" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
                   <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
@@ -96,11 +116,18 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
         <button
           onClick={handleSearch}
           disabled={isSearching}
-          className="text-sm text-navy-300 hover:text-white px-3 py-2 border-l border-navy-700"
+          className="text-sm text-navy-300 hover:text-white px-3 py-2 border-l border-navy-700 flex-shrink-0"
         >
-          {isSearching ? '...' : 'Search'}
+          {isSearching ? '...' : 'Go'}
         </button>
       </div>
+
+      {/* Voice feedback toast */}
+      {feedback && (
+        <div className="absolute left-0 right-0 top-full mt-1 bg-navy-800 text-white text-xs px-3 py-2 rounded-lg shadow-xl z-50 border border-navy-700 text-center">
+          {feedback}
+        </div>
+      )}
 
       {/* Results dropdown */}
       {showResults && results.length > 0 && (
@@ -119,6 +146,7 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
                   onNavigate(`/accounts/${result.account_id}`);
                 }
                 setShowResults(false);
+                setQuery('');
               }}
               className="w-full text-left px-4 py-3 hover:bg-navy-50 border-b border-navy-50 transition-colors"
             >

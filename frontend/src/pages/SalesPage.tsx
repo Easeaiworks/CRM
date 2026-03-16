@@ -42,22 +42,18 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
     const line = lines[i].trim();
     if (!line) continue;
 
-    // Detect report period from header (e.g. "January 2026-March 2026")
     if (!headerPassed && line.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/i)) {
       reportPeriod = line.trim();
     }
 
-    // Skip header section - detect by column header row
     if (line.includes(',ID#,Date,Quantity,Item/Activity,Amount,')) {
       headerPassed = true;
       continue;
     }
     if (!headerPassed) continue;
 
-    // Skip grand total
     if (line.includes('Grand Total:')) continue;
 
-    // Check for customer total row
     if (line.includes(' Total:,')) {
       if (currentCustomer && customerLines.length > 0) {
         const totalAmount = customerLines.reduce((s, r) => s + r.amount, 0);
@@ -78,7 +74,6 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
       continue;
     }
 
-    // Check if this is a customer name row
     if (!line.startsWith(',') && !line.startsWith('"') && !line.match(/^\d/)) {
       const parts = line.split(',');
       if (parts.length <= 3 && !line.includes('$')) {
@@ -88,7 +83,6 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
       }
     }
 
-    // Parse line item rows (start with comma = indented under customer)
     if (line.startsWith(',') && currentCustomer) {
       const rawLine = line.substring(1);
       const parts = parseCSVLine(rawLine);
@@ -129,7 +123,6 @@ function parseAccountEdgeCSV(text: string): { records: ParsedSale[]; summaries: 
     }
   }
 
-  // Catch last customer
   if (currentCustomer && customerLines.length > 0) {
     const totalAmount = customerLines.reduce((s, r) => s + r.amount, 0);
     const totalProfit = customerLines.reduce((s, r) => s + r.profit, 0);
@@ -207,28 +200,25 @@ export default function SalesPage({ user }: Props) {
 
   useEffect(() => { loadSales(); }, []);
 
-  // Handle ?customer= URL param (from voice navigation) — fuzzy match to actual customer names
+  // Handle ?customer= URL param (from voice navigation) — fuzzy match
   useEffect(() => {
     const customerParam = searchParams.get('customer');
     if (customerParam && sales.length > 0) {
       const query = customerParam.toLowerCase();
       const customers = [...new Set(sales.map(s => s.customer_name || s.shop_name || '').filter(Boolean))];
 
-      // Try exact match first
       const exact = customers.find(c => c.toLowerCase() === query);
       if (exact) {
         setFilterCustomer(exact);
         setExpandedSale(exact);
         setVoiceMatchFeedback('');
       } else {
-        // Fuzzy match — find best substring/contains match
         const contains = customers.filter(c => c.toLowerCase().includes(query) || query.includes(c.toLowerCase()));
         if (contains.length === 1) {
           setFilterCustomer(contains[0]);
           setExpandedSale(contains[0]);
           setVoiceMatchFeedback('');
         } else if (contains.length > 1) {
-          // Multiple matches — pick the closest one by length similarity
           const best = contains.sort((a, b) =>
             Math.abs(a.length - customerParam.length) - Math.abs(b.length - customerParam.length)
           )[0];
@@ -236,7 +226,6 @@ export default function SalesPage({ user }: Props) {
           setExpandedSale(best);
           setVoiceMatchFeedback(`Matched "${customerParam}" to "${best}"`);
         } else {
-          // No substring match — try word overlap
           const queryWords = query.split(/\s+/);
           const scored = customers.map(c => {
             const cWords = c.toLowerCase().split(/\s+/);
@@ -253,11 +242,9 @@ export default function SalesPage({ user }: Props) {
           }
         }
       }
-      // Clear the URL param so it doesn't re-trigger
       setSearchParams({}, { replace: true });
     }
 
-    // Handle ?rep= URL param (from voice navigation) — fuzzy match to salesperson names
     const repParam = searchParams.get('rep');
     if (repParam && sales.length > 0) {
       const query = repParam.toLowerCase();
@@ -267,7 +254,6 @@ export default function SalesPage({ user }: Props) {
         setFilterSalesperson(match);
         setVoiceMatchFeedback(`Showing sales for rep: ${match}`);
       } else {
-        // Try word overlap
         const queryWords = query.split(/\s+/);
         const scored = reps.map(r => {
           const rWords = r.toLowerCase().split(/\s+/);
@@ -363,7 +349,7 @@ export default function SalesPage({ user }: Props) {
     }
   };
 
-  // Build unique filter options from all sales data
+  // Build unique filter options
   const allCustomers = [...new Set(sales.map(s => s.customer_name || s.shop_name || '').filter(Boolean))].sort();
   const allSalespersons = [...new Set(sales.map(s => s.salesperson || '').filter(Boolean))].sort();
 
@@ -393,7 +379,6 @@ export default function SalesPage({ user }: Props) {
     items,
   })).sort((a, b) => b.total - a.total);
 
-  // Group a customer's items by invoice date
   const groupByInvoice = (items: SalesData[]) => {
     const byDate: Record<string, SalesData[]> = {};
     items.forEach(item => {
@@ -410,6 +395,8 @@ export default function SalesPage({ user }: Props) {
     } catch { return d; }
   };
 
+  const fmtMoney = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const activeFilters = (filterCustomer ? 1 : 0) + (filterSalesperson ? 1 : 0);
 
   return (
@@ -421,11 +408,11 @@ export default function SalesPage({ user }: Props) {
         const first = new Date(dates[0] + 'T00:00:00');
         const last = new Date(dates[dates.length - 1] + 'T00:00:00');
         return (
-          <div className="bg-brand-50 border border-brand-200 rounded-xl px-5 py-3 mb-6 flex items-center justify-between">
+          <div className="bg-brand-50 border border-brand-200 rounded-xl px-4 sm:px-5 py-3 mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <div>
-              <span className="text-sm text-brand-700 font-medium">Sales data for: </span>
+              <span className="text-sm text-brand-700 font-medium">Sales data: </span>
               <span className="text-sm text-brand-900 font-bold">
-                {first.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} &ndash; {last.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                {first.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} &ndash; {last.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </span>
             </div>
             <span className="text-xs text-brand-600">{sales.length} records &middot; {allCustomers.length} customers</span>
@@ -433,26 +420,24 @@ export default function SalesPage({ user }: Props) {
         );
       })()}
 
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-navy-900">Sales Tracking</h1>
-          <p className="text-navy-500 text-sm mt-1">Import from AccountEdge or log sales manually. Click any customer to see invoices.</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-navy-900">Sales Tracking</h1>
+          <p className="text-navy-500 text-xs sm:text-sm mt-1">Click any customer to see invoices.</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => { setShowImport(!showImport); setParsePreview(null); setImportResult(null); }} className="btn-primary">
-            Import from AccountEdge
-          </button>
-        </div>
+        <button onClick={() => { setShowImport(!showImport); setParsePreview(null); setImportResult(null); }} className="btn-primary text-sm">
+          Import from AccountEdge
+        </button>
       </div>
 
       {/* Filter Bar */}
       {sales.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 mb-5">
-          <span className="text-xs font-medium text-navy-500 uppercase tracking-wide">Filter by:</span>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
+          <span className="text-xs font-medium text-navy-500 uppercase tracking-wide">Filter:</span>
           <select
             value={filterCustomer}
             onChange={e => { setFilterCustomer(e.target.value); setExpandedSale(null); }}
-            className="input-field w-auto min-w-[180px] text-sm py-2"
+            className="input-field text-sm py-2"
           >
             <option value="">All Customers</option>
             {allCustomers.map(c => <option key={c} value={c}>{c}</option>)}
@@ -461,24 +446,24 @@ export default function SalesPage({ user }: Props) {
             <select
               value={filterSalesperson}
               onChange={e => { setFilterSalesperson(e.target.value); setExpandedSale(null); }}
-              className="input-field w-auto min-w-[160px] text-sm py-2"
+              className="input-field text-sm py-2"
             >
               <option value="">All Salespersons</option>
               {allSalespersons.map(sp => <option key={sp} value={sp}>{sp}</option>)}
             </select>
           )}
           {activeFilters > 0 && (
-            <button
-              onClick={() => { setFilterCustomer(''); setFilterSalesperson(''); setExpandedSale(null); }}
-              className="text-xs text-brand-600 hover:text-brand-800 underline"
-            >
-              Clear filters ({activeFilters})
-            </button>
-          )}
-          {activeFilters > 0 && (
-            <span className="text-xs text-navy-400 ml-auto">
-              Showing {filteredSales.length} of {sales.length} records &middot; {customerTotals.length} customer{customerTotals.length !== 1 ? 's' : ''}
-            </span>
+            <div className="flex items-center justify-between sm:justify-start gap-3">
+              <button
+                onClick={() => { setFilterCustomer(''); setFilterSalesperson(''); setExpandedSale(null); }}
+                className="text-xs text-brand-600 hover:text-brand-800 underline"
+              >
+                Clear filters ({activeFilters})
+              </button>
+              <span className="text-xs text-navy-400">
+                {filteredSales.length} of {sales.length} records
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -497,7 +482,6 @@ export default function SalesPage({ user }: Props) {
           <h3 className="font-bold text-navy-900 mb-3">Import AccountEdge Sales Report</h3>
           <p className="text-sm text-navy-500 mb-4">
             Upload your AccountEdge "Customer Sales Detail" or "Profit Analysis" CSV export.
-            The system will parse the report, match customers to your accounts, and import the sales data.
           </p>
           <input
             ref={fileRef}
@@ -507,7 +491,7 @@ export default function SalesPage({ user }: Props) {
             className="input-field"
           />
 
-          {/* Parse Preview with expandable rows */}
+          {/* Parse Preview */}
           {parsePreview && (
             <div className="mt-4 space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -520,22 +504,21 @@ export default function SalesPage({ user }: Props) {
                   Parsed {parsePreview.summaries.length} customers with {parsePreview.records.length} line items
                 </p>
                 <p className="text-sm text-blue-600 mt-1">
-                  Total revenue: ${parsePreview.summaries.reduce((s, c) => s + c.total_amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  Total revenue: {fmtMoney(parsePreview.summaries.reduce((s, c) => s + c.total_amount, 0))}
                 </p>
-                <p className="text-xs text-blue-500 mt-1">Click any customer row to see their line-item transactions</p>
               </div>
 
-              {/* Customer summary table with expandable rows */}
-              <div className="max-h-96 overflow-y-auto border border-navy-100 rounded-lg">
+              {/* Preview table - scrollable on mobile */}
+              <div className="max-h-96 overflow-auto border border-navy-100 rounded-lg">
                 <table className="w-full text-sm">
                   <thead className="bg-navy-50 sticky top-0 z-10">
                     <tr>
                       <th className="text-left py-2 px-3 text-xs font-medium text-navy-500 w-6"></th>
                       <th className="text-left py-2 px-3 text-xs font-medium text-navy-500">Customer</th>
                       <th className="text-right py-2 px-3 text-xs font-medium text-navy-500">Revenue</th>
-                      <th className="text-right py-2 px-3 text-xs font-medium text-navy-500">Profit</th>
-                      <th className="text-right py-2 px-3 text-xs font-medium text-navy-500">Items</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium text-navy-500">Rep</th>
+                      <th className="text-right py-2 px-3 text-xs font-medium text-navy-500 hidden sm:table-cell">Profit</th>
+                      <th className="text-right py-2 px-3 text-xs font-medium text-navy-500 hidden sm:table-cell">Items</th>
+                      <th className="text-left py-2 px-3 text-xs font-medium text-navy-500 hidden md:table-cell">Rep</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -550,16 +533,16 @@ export default function SalesPage({ user }: Props) {
                             <span className={`inline-block transition-transform ${expandedPreview.has(i) ? 'rotate-90' : ''}`}>&#9654;</span>
                           </td>
                           <td className="py-2 px-3 font-medium text-brand-700">{s.customer_name}</td>
-                          <td className="py-2 px-3 text-right text-green-600 font-medium">${s.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                          <td className="py-2 px-3 text-right text-navy-600">${s.total_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                          <td className="py-2 px-3 text-right text-navy-500">{s.line_count}</td>
-                          <td className="py-2 px-3 text-navy-500">{s.salesperson || '-'}</td>
+                          <td className="py-2 px-3 text-right text-green-600 font-medium">{fmtMoney(s.total_amount)}</td>
+                          <td className="py-2 px-3 text-right text-navy-600 hidden sm:table-cell">{fmtMoney(s.total_profit)}</td>
+                          <td className="py-2 px-3 text-right text-navy-500 hidden sm:table-cell">{s.line_count}</td>
+                          <td className="py-2 px-3 text-navy-500 hidden md:table-cell">{s.salesperson || '-'}</td>
                         </tr>
                         {expandedPreview.has(i) && (
                           <tr key={`detail-${i}`}>
                             <td colSpan={6} className="p-0">
-                              <div className="bg-navy-50 border-y border-navy-100">
-                                <table className="w-full text-xs">
+                              <div className="bg-navy-50 border-y border-navy-100 overflow-x-auto">
+                                <table className="w-full text-xs min-w-[500px]">
                                   <thead>
                                     <tr className="text-navy-400">
                                       <th className="text-left py-1.5 px-3 pl-10">Date</th>
@@ -598,24 +581,24 @@ export default function SalesPage({ user }: Props) {
               </div>
 
               {/* Import buttons */}
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={() => confirmImport('detailed')}
                   disabled={importing}
                   className="btn-primary flex-1"
                 >
-                  {importing ? 'Importing...' : `Import Detailed (${parsePreview.records.length} line items)`}
+                  {importing ? 'Importing...' : `Import Detailed (${parsePreview.records.length} items)`}
                 </button>
                 <button
                   onClick={() => confirmImport('summary')}
                   disabled={importing}
                   className="btn-secondary flex-1"
                 >
-                  {importing ? 'Importing...' : `Import Summary (${parsePreview.summaries.length} customer totals)`}
+                  {importing ? 'Importing...' : `Import Summary (${parsePreview.summaries.length} totals)`}
                 </button>
               </div>
               <p className="text-xs text-navy-400">
-                <strong>Detailed</strong> (recommended) imports every line item for full drill-down. Summary imports one total per customer.
+                <strong>Detailed</strong> (recommended) imports every line item for full drill-down.
               </p>
             </div>
           )}
@@ -633,7 +616,7 @@ export default function SalesPage({ user }: Props) {
                   <div className="max-h-40 overflow-y-auto mt-1">
                     {importResult.unmatched.map((u: any, i: number) => (
                       <div key={i} className="text-sm text-yellow-600 mt-1">
-                        {u.customer_name} — ${u.amount?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        {u.customer_name} — {fmtMoney(u.amount || 0)}
                       </div>
                     ))}
                   </div>
@@ -644,7 +627,7 @@ export default function SalesPage({ user }: Props) {
         </div>
       )}
 
-      {/* Main Sales Table - grouped by customer with invoice drill-down */}
+      {/* Main Sales Table */}
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -657,163 +640,265 @@ export default function SalesPage({ user }: Props) {
           </p>
         </div>
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-navy-100">
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase w-6"></th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Customer</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Total Revenue</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Total Profit</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Invoices</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Rep</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customerTotals.map((ct) => {
-                const isExpanded = expandedSale === ct.name;
-                const hasDetailedItems = ct.items.some(s => s.item_name);
-                const invoiceGroups = groupByInvoice(ct.items);
-                const invoiceCount = invoiceGroups.length;
-                return (
-                  <>
-                    <tr
-                      key={ct.name}
-                      onClick={() => setExpandedSale(isExpanded ? null : ct.name)}
-                      className="border-b border-navy-50 cursor-pointer hover:bg-brand-50 transition-colors"
-                    >
-                      <td className="py-3 px-4 text-navy-400">
-                        <span className={`inline-block transition-transform text-xs ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
-                      </td>
-                      <td className="py-3 px-4 text-sm font-medium text-brand-700">
-                        {ct.shop_name || ct.name}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-right font-bold text-green-600">
-                        ${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className={`py-3 px-4 text-sm text-right font-medium ${ct.totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                        ${ct.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-right text-navy-500">
-                        {invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''} ({ct.count} items)
-                      </td>
-                      <td className="py-3 px-4 text-sm text-navy-500">
-                        {ct.salesperson || '-'}
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr key={`${ct.name}-detail`}>
-                        <td colSpan={6} className="p-0">
-                          <div className="bg-navy-50 border-y border-navy-100">
-                            {hasDetailedItems ? (
-                              <div className="divide-y divide-navy-200">
-                                {invoiceGroups.map(([date, items], gi) => {
-                                  const invTotal = items.reduce((s, i) => s + (i.sale_amount || 0), 0);
-                                  const invProfit = items.reduce((s, i) => s + (i.profit || 0), 0);
-                                  const invCogs = items.reduce((s, i) => s + (i.cogs || 0), 0);
-                                  return (
-                                    <div key={gi} className="py-2">
-                                      {/* Invoice header */}
-                                      <div className="flex items-center justify-between px-4 pl-10 py-1.5">
-                                        <span className="text-xs font-bold text-navy-800">
-                                          Invoice: {fmtDate(date)}
-                                        </span>
-                                        <span className="text-xs text-navy-500">
-                                          {items.length} item{items.length !== 1 ? 's' : ''}
-                                        </span>
+        <>
+          {/* Mobile card view for customer list */}
+          <div className="sm:hidden space-y-2">
+            {customerTotals.map((ct) => {
+              const isExpanded = expandedSale === ct.name;
+              const hasDetailedItems = ct.items.some(s => s.item_name);
+              const invoiceGroups = groupByInvoice(ct.items);
+              const invoiceCount = invoiceGroups.length;
+              return (
+                <div key={ct.name} className="card !p-0 overflow-hidden">
+                  {/* Customer header — tappable */}
+                  <button
+                    onClick={() => setExpandedSale(isExpanded ? null : ct.name)}
+                    className="w-full text-left p-4 hover:bg-navy-50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-navy-900 text-sm truncate">{ct.shop_name || ct.name}</div>
+                        <div className="text-xs text-navy-400 mt-0.5">
+                          {ct.salesperson || 'No rep'} &middot; {invoiceCount} inv &middot; {ct.count} items
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="font-bold text-green-600 text-sm">{fmtMoney(ct.total)}</div>
+                        <div className={`text-xs ${ct.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          P: {fmtMoney(ct.totalProfit)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-center mt-2">
+                      <span className={`text-navy-400 text-xs transition-transform inline-block ${isExpanded ? 'rotate-180' : ''}`}>
+                        &#9660;
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Expanded invoice detail */}
+                  {isExpanded && (
+                    <div className="border-t border-navy-100 bg-navy-50">
+                      {hasDetailedItems ? (
+                        <div className="divide-y divide-navy-200">
+                          {invoiceGroups.map(([date, items], gi) => {
+                            const invTotal = items.reduce((s, i) => s + (i.sale_amount || 0), 0);
+                            const invProfit = items.reduce((s, i) => s + (i.profit || 0), 0);
+                            return (
+                              <div key={gi} className="py-2">
+                                <div className="px-4 py-1 flex items-center justify-between">
+                                  <span className="text-xs font-bold text-navy-800">{fmtDate(date)}</span>
+                                  <span className="text-xs text-green-600 font-medium">{fmtMoney(invTotal)}</span>
+                                </div>
+                                {items.map((sale, j) => (
+                                  <div key={j} className="px-4 py-1.5 flex items-center justify-between text-xs">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-medium text-navy-800 truncate">{sale.item_name || '-'}</div>
+                                      <div className="text-navy-400">
+                                        Qty: {sale.quantity || '-'}
+                                        {sale.category ? ` · ${sale.category}` : ''}
                                       </div>
-                                      {/* Line items */}
-                                      <table className="w-full text-xs">
-                                        <thead>
-                                          <tr className="text-navy-400">
-                                            <th className="text-left py-1 px-4 pl-14">Item</th>
-                                            <th className="text-right py-1 px-3">Qty</th>
-                                            <th className="text-right py-1 px-3">Amount</th>
-                                            <th className="text-right py-1 px-3">COGS</th>
-                                            <th className="text-right py-1 px-3">Profit</th>
-                                            <th className="text-left py-1 px-3">Category</th>
-                                            <th className="text-left py-1 px-3">Product Line</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {items.map((sale, j) => (
-                                            <tr key={j} className="border-t border-navy-100/30 hover:bg-white/50">
-                                              <td className="py-1.5 px-4 pl-14 font-medium text-navy-800">{sale.item_name || '-'}</td>
-                                              <td className="py-1.5 px-3 text-right text-navy-600">{sale.quantity || '-'}</td>
-                                              <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
-                                              <td className="py-1.5 px-3 text-right text-navy-500">${(sale.cogs || 0).toFixed(2)}</td>
-                                              <td className={`py-1.5 px-3 text-right ${(sale.profit || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                                ${(sale.profit || 0).toFixed(2)}
-                                              </td>
-                                              <td className="py-1.5 px-3 text-navy-500">{sale.category || '-'}</td>
-                                              <td className="py-1.5 px-3 text-navy-500">{sale.product_line || '-'}</td>
-                                            </tr>
-                                          ))}
-                                          {/* Invoice total row */}
-                                          <tr className="bg-navy-100/50 font-semibold">
-                                            <td className="py-1.5 px-4 pl-14 text-navy-700">Invoice Total</td>
-                                            <td className="py-1.5 px-3"></td>
-                                            <td className="py-1.5 px-3 text-right text-green-700">${invTotal.toFixed(2)}</td>
-                                            <td className="py-1.5 px-3 text-right text-navy-600">${invCogs.toFixed(2)}</td>
-                                            <td className={`py-1.5 px-3 text-right ${invProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>${invProfit.toFixed(2)}</td>
-                                            <td className="py-1.5 px-3" colSpan={2}></td>
-                                          </tr>
-                                        </tbody>
-                                      </table>
                                     </div>
-                                  );
-                                })}
-                                {/* Customer grand total */}
-                                <div className="bg-navy-200/40 px-4 pl-10 py-3 flex items-center justify-between">
-                                  <span className="text-sm font-bold text-navy-900">
-                                    Total Sales &mdash; {ct.shop_name || ct.name}
-                                  </span>
-                                  <div className="flex gap-6 text-sm">
-                                    <span className="font-bold text-green-700">Revenue: ${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                    <span className={`font-bold ${ct.totalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                                      Profit: ${ct.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                    </span>
-                                    <span className="text-navy-600">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''} &middot; {ct.count} items</span>
+                                    <div className="text-right flex-shrink-0 ml-3">
+                                      <div className="text-green-600">{fmtMoney(sale.sale_amount || 0)}</div>
+                                      <div className={`${(sale.profit || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                        P: ${(sale.profit || 0).toFixed(2)}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
+                                ))}
                               </div>
-                            ) : (
-                              /* Fallback for summary-only data */
-                              <div>
-                                <table className="w-full text-xs">
-                                  <thead>
-                                    <tr className="text-navy-400">
-                                      <th className="text-left py-1.5 px-4 pl-10">Date</th>
-                                      <th className="text-right py-1.5 px-3">Amount</th>
-                                      <th className="text-left py-1.5 px-3">Details</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {ct.items.map((sale, j) => (
-                                      <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
-                                        <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
-                                        <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
-                                        <td className="py-1.5 px-3 text-navy-600">{sale.memo || '-'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                                <div className="bg-navy-200/40 px-4 pl-10 py-3 flex items-center justify-between">
-                                  <span className="text-sm font-bold text-navy-900">Total Sales</span>
-                                  <span className="text-sm font-bold text-green-700">${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                </div>
-                              </div>
-                            )}
+                            );
+                          })}
+                          {/* Grand total */}
+                          <div className="px-4 py-3 bg-navy-200/40 flex items-center justify-between">
+                            <span className="text-xs font-bold text-navy-900">Customer Total</span>
+                            <div className="text-right">
+                              <span className="text-sm font-bold text-green-700">{fmtMoney(ct.total)}</span>
+                              <span className={`text-xs ml-2 ${ct.totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                P: {fmtMoney(ct.totalProfit)}
+                              </span>
+                            </div>
                           </div>
+                        </div>
+                      ) : (
+                        <div className="p-4">
+                          {ct.items.map((sale, j) => (
+                            <div key={j} className="flex justify-between text-xs py-1 border-b border-navy-100/50 last:border-0">
+                              <span className="text-navy-600">{sale.sale_date}</span>
+                              <span className="text-green-600">{fmtMoney(sale.sale_amount || 0)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between text-xs font-bold pt-2 mt-1 border-t border-navy-200">
+                            <span>Total</span>
+                            <span className="text-green-700">{fmtMoney(ct.total)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop/tablet table view */}
+          <div className="hidden sm:block card overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-navy-100">
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase w-6"></th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Customer</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Total Revenue</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase hidden md:table-cell">Total Profit</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Invoices</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase hidden lg:table-cell">Rep</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customerTotals.map((ct) => {
+                  const isExpanded = expandedSale === ct.name;
+                  const hasDetailedItems = ct.items.some(s => s.item_name);
+                  const invoiceGroups = groupByInvoice(ct.items);
+                  const invoiceCount = invoiceGroups.length;
+                  return (
+                    <>
+                      <tr
+                        key={ct.name}
+                        onClick={() => setExpandedSale(isExpanded ? null : ct.name)}
+                        className="border-b border-navy-50 cursor-pointer hover:bg-brand-50 transition-colors"
+                      >
+                        <td className="py-3 px-4 text-navy-400">
+                          <span className={`inline-block transition-transform text-xs ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                        </td>
+                        <td className="py-3 px-4 text-sm font-medium text-brand-700">
+                          {ct.shop_name || ct.name}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-right font-bold text-green-600">
+                          {fmtMoney(ct.total)}
+                        </td>
+                        <td className={`py-3 px-4 text-sm text-right font-medium hidden md:table-cell ${ct.totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {fmtMoney(ct.totalProfit)}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-right text-navy-500">
+                          {invoiceCount} inv ({ct.count} items)
+                        </td>
+                        <td className="py-3 px-4 text-sm text-navy-500 hidden lg:table-cell">
+                          {ct.salesperson || '-'}
                         </td>
                       </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      {isExpanded && (
+                        <tr key={`${ct.name}-detail`}>
+                          <td colSpan={6} className="p-0">
+                            <div className="bg-navy-50 border-y border-navy-100">
+                              {hasDetailedItems ? (
+                                <div className="divide-y divide-navy-200">
+                                  {invoiceGroups.map(([date, items], gi) => {
+                                    const invTotal = items.reduce((s, i) => s + (i.sale_amount || 0), 0);
+                                    const invProfit = items.reduce((s, i) => s + (i.profit || 0), 0);
+                                    const invCogs = items.reduce((s, i) => s + (i.cogs || 0), 0);
+                                    return (
+                                      <div key={gi} className="py-2">
+                                        <div className="flex items-center justify-between px-4 pl-10 py-1.5">
+                                          <span className="text-xs font-bold text-navy-800">
+                                            Invoice: {fmtDate(date)}
+                                          </span>
+                                          <span className="text-xs text-navy-500">
+                                            {items.length} item{items.length !== 1 ? 's' : ''}
+                                          </span>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-xs min-w-[600px]">
+                                            <thead>
+                                              <tr className="text-navy-400">
+                                                <th className="text-left py-1 px-4 pl-14">Item</th>
+                                                <th className="text-right py-1 px-3">Qty</th>
+                                                <th className="text-right py-1 px-3">Amount</th>
+                                                <th className="text-right py-1 px-3">COGS</th>
+                                                <th className="text-right py-1 px-3">Profit</th>
+                                                <th className="text-left py-1 px-3">Category</th>
+                                                <th className="text-left py-1 px-3">Product Line</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {items.map((sale, j) => (
+                                                <tr key={j} className="border-t border-navy-100/30 hover:bg-white/50">
+                                                  <td className="py-1.5 px-4 pl-14 font-medium text-navy-800">{sale.item_name || '-'}</td>
+                                                  <td className="py-1.5 px-3 text-right text-navy-600">{sale.quantity || '-'}</td>
+                                                  <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
+                                                  <td className="py-1.5 px-3 text-right text-navy-500">${(sale.cogs || 0).toFixed(2)}</td>
+                                                  <td className={`py-1.5 px-3 text-right ${(sale.profit || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                                    ${(sale.profit || 0).toFixed(2)}
+                                                  </td>
+                                                  <td className="py-1.5 px-3 text-navy-500">{sale.category || '-'}</td>
+                                                  <td className="py-1.5 px-3 text-navy-500">{sale.product_line || '-'}</td>
+                                                </tr>
+                                              ))}
+                                              <tr className="bg-navy-100/50 font-semibold">
+                                                <td className="py-1.5 px-4 pl-14 text-navy-700">Invoice Total</td>
+                                                <td className="py-1.5 px-3"></td>
+                                                <td className="py-1.5 px-3 text-right text-green-700">${invTotal.toFixed(2)}</td>
+                                                <td className="py-1.5 px-3 text-right text-navy-600">${invCogs.toFixed(2)}</td>
+                                                <td className={`py-1.5 px-3 text-right ${invProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>${invProfit.toFixed(2)}</td>
+                                                <td className="py-1.5 px-3" colSpan={2}></td>
+                                              </tr>
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {/* Customer grand total */}
+                                  <div className="bg-navy-200/40 px-4 pl-10 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
+                                    <span className="text-sm font-bold text-navy-900">
+                                      Total Sales &mdash; {ct.shop_name || ct.name}
+                                    </span>
+                                    <div className="flex flex-wrap gap-3 sm:gap-6 text-sm">
+                                      <span className="font-bold text-green-700">Revenue: {fmtMoney(ct.total)}</span>
+                                      <span className={`font-bold ${ct.totalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                        Profit: {fmtMoney(ct.totalProfit)}
+                                      </span>
+                                      <span className="text-navy-600">{invoiceCount} inv &middot; {ct.count} items</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="text-navy-400">
+                                        <th className="text-left py-1.5 px-4 pl-10">Date</th>
+                                        <th className="text-right py-1.5 px-3">Amount</th>
+                                        <th className="text-left py-1.5 px-3">Details</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ct.items.map((sale, j) => (
+                                        <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
+                                          <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
+                                          <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
+                                          <td className="py-1.5 px-3 text-navy-600">{sale.memo || '-'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                  <div className="bg-navy-200/40 px-4 pl-10 py-3 flex items-center justify-between">
+                                    <span className="text-sm font-bold text-navy-900">Total Sales</span>
+                                    <span className="text-sm font-bold text-green-700">{fmtMoney(ct.total)}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

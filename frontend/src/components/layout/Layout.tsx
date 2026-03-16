@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { User } from '../../types';
 import AISearchBar from '../search/AISearchBar';
-import { useVoiceNavigation } from '../../hooks/useVoiceNavigation';
 
 interface LayoutProps {
   user: User;
@@ -14,10 +13,6 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-
-  const { isListening, feedback, startListening, stopListening, isSupported: voiceNavSupported } = useVoiceNavigation(
-    (path) => navigate(path)
-  );
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: '\u{1F4CA}' },
@@ -36,20 +31,20 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
     <div className="min-h-screen bg-navy-50">
       {/* Top navbar */}
       <header className="bg-navy-900 text-white shadow-lg fixed top-0 left-0 right-0 z-50">
-        <div className="flex items-center justify-between px-4 h-16">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between px-3 sm:px-4 h-14 sm:h-16 gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {/* Mobile hamburger */}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="lg:hidden p-2 rounded-lg hover:bg-navy-800 transition-colors"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center font-bold text-sm">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-brand-500 rounded-lg flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0">
                 C
               </div>
               <div className="hidden sm:block">
@@ -59,58 +54,24 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
             </Link>
           </div>
 
-          {/* Search bar - center */}
-          <div className="hidden md:block flex-1 max-w-xl mx-8">
+          {/* Search bar — visible on all screens */}
+          <div className="flex-1 max-w-xl mx-1 sm:mx-4">
             <AISearchBar onNavigate={(path) => navigate(path)} />
           </div>
 
-          {/* Voice nav + User menu */}
-          <div className="flex items-center gap-2">
-            {/* Voice Navigation Button */}
-            {voiceNavSupported && (
-              <div className="relative">
-                <button
-                  onClick={isListening ? stopListening : startListening}
-                  className={`p-2 rounded-lg transition-all ${
-                    isListening
-                      ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30'
-                      : 'text-navy-300 hover:text-white hover:bg-navy-800'
-                  }`}
-                  title={isListening ? 'Stop voice command' : 'Voice command (say "go to dashboard", "find Maple Leaf")'}
-                >
-                  {isListening && (
-                    <span className="absolute inset-0 rounded-lg bg-brand-500 animate-ping opacity-30" />
-                  )}
-                  <svg className="w-5 h-5 relative" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                  </svg>
-                </button>
-                {/* Voice feedback toast */}
-                {feedback && (
-                  <div className="absolute right-0 top-full mt-2 bg-navy-800 text-white text-xs px-3 py-2 rounded-lg shadow-xl whitespace-nowrap z-50 border border-navy-700">
-                    {feedback}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="text-right hidden sm:block ml-1">
+          {/* User menu */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            <div className="text-right hidden md:block ml-1">
               <div className="text-sm font-medium">{user.first_name} {user.last_name}</div>
               <div className="text-xs text-navy-300 capitalize">{user.role}</div>
             </div>
             <button
               onClick={onLogout}
-              className="text-sm text-navy-300 hover:text-white px-3 py-1.5 rounded-lg hover:bg-navy-800 transition-colors"
+              className="text-xs sm:text-sm text-navy-300 hover:text-white px-2 sm:px-3 py-1.5 rounded-lg hover:bg-navy-800 transition-colors"
             >
               Logout
             </button>
           </div>
-        </div>
-
-        {/* Mobile search bar */}
-        <div className="md:hidden px-4 pb-3">
-          <AISearchBar onNavigate={(path) => navigate(path)} />
         </div>
       </header>
 
@@ -124,7 +85,7 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-16 left-0 bottom-0 w-56 bg-white border-r border-navy-100 z-40 transform transition-transform duration-200 ease-in-out
+        className={`fixed top-14 sm:top-16 left-0 bottom-0 w-56 bg-white border-r border-navy-100 z-40 transform transition-transform duration-200 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       >
         <nav className="p-4 space-y-1">
@@ -152,9 +113,29 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
         </div>
       </aside>
 
+      {/* Mobile bottom navigation */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-navy-200 shadow-[0_-2px_10px_rgba(0,0,0,0.1)]">
+        <div className="flex items-center justify-around px-2 py-1">
+          {navItems.map((item) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors min-w-0
+                ${isActive(item.path)
+                  ? 'text-brand-600'
+                  : 'text-navy-400 hover:text-navy-600'
+                }`}
+            >
+              <span className="text-lg">{item.icon}</span>
+              <span className="truncate">{item.label}</span>
+            </Link>
+          ))}
+        </div>
+      </nav>
+
       {/* Main content */}
-      <main className="pt-16 lg:pl-56 min-h-screen">
-        <div className="p-4 md:p-6 lg:p-8 max-w-7xl">
+      <main className="pt-14 sm:pt-16 lg:pl-56 min-h-screen pb-20 lg:pb-0">
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8 max-w-7xl">
           {children}
         </div>
       </main>
