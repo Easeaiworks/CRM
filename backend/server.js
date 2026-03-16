@@ -347,6 +347,13 @@ async function startServer() {
         const amt = parseFloat(r.amount || r['Amount'] || r['Total'] || 0);
         const date = r.date || r['Invoice Date'] || r['Date'] || '';
         const memo = r.memo || r['Memo'] || r['Description'] || '';
+        const itemName = r.item_name || '';
+        const quantity = parseInt(r.quantity) || 0;
+        const cogs = parseFloat(r.cogs) || 0;
+        const profit = parseFloat(r.profit) || 0;
+        const category = r.category || '';
+        const productLine = r.product_line || '';
+        const salesperson = r.salesperson || '';
         if (!name || !amt || !date) continue;
         let matchId = null, best = 0;
         for (const a of allAccounts) {
@@ -354,8 +361,8 @@ async function startServer() {
           if (s > best && s >= 0.80) { best = s; matchId = a.id; }
         }
         const month = date.substring(0, 7);
-        await execute('INSERT INTO sales_data (account_id,rep_id,sale_amount,sale_date,month,memo,customer_name,imported_from_accountedge) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-          [matchId, req.user.userId, amt, date, month, memo, name, true]);
+        await execute('INSERT INTO sales_data (account_id,rep_id,sale_amount,sale_date,month,memo,customer_name,imported_from_accountedge,item_name,quantity,cogs,profit,category,product_line,salesperson) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
+          [matchId, req.user.userId, amt, date, month, memo, name, true, itemName, quantity, cogs, profit, category, productLine, salesperson]);
         if (!matchId) unmatched.push({ customer_name: name, amount: amt, date });
         imported++;
       }

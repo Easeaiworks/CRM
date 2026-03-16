@@ -73,6 +73,13 @@ export interface SalesData {
   shop_name?: string;
   rep_first_name?: string;
   rep_last_name?: string;
+  item_name?: string;
+  quantity?: number;
+  cogs?: number;
+  profit?: number;
+  category?: string;
+  product_line?: string;
+  salesperson?: string;
 }
 
 export interface DashboardMetrics {

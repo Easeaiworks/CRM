@@ -115,6 +115,37 @@ CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id)
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id, created_at DESC);
 
 -- Notification preferences (add to users table)
+-- Line-item detail columns for sales_data (for drill-down)
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN item_name TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN quantity INTEGER DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN cogs REAL DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN profit REAL DEFAULT 0;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN category TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN product_line TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE sales_data ADD COLUMN salesperson TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+-- Notification preferences (add to users table)
 DO $$ BEGIN
   ALTER TABLE users ADD COLUMN phone TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;

@@ -196,8 +196,6 @@ export default function SalesPage({ user }: Props) {
   const [parsePreview, setParsePreview] = useState<{ records: ParsedSale[]; summaries: CustomerSummary[]; reportPeriod: string } | null>(null);
   const [expandedPreview, setExpandedPreview] = useState<Set<number>>(new Set());
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
-  // Keep last imported line items for drill-down on main table
-  const [lastImportedLines, setLastImportedLines] = useState<ParsedSale[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadSales(); }, []);
@@ -251,6 +249,7 @@ export default function SalesPage({ user }: Props) {
           amount: s.total_amount,
           date: s.date_range.split(' - ')[1] || s.date_range.split(' - ')[0] || new Date().toISOString().split('T')[0],
           memo: `${s.line_count} line items, Profit: $${s.total_profit.toFixed(2)}${s.salesperson ? ', Rep: ' + s.salesperson : ''}`,
+          salesperson: s.salesperson,
         }));
       } else {
         records = parsePreview.records.map(r => ({
@@ -258,11 +257,15 @@ export default function SalesPage({ user }: Props) {
           amount: r.amount,
           date: r.date,
           memo: `${r.item} (Qty: ${r.quantity})${r.category ? ' [' + r.category + ']' : ''}${r.salesperson ? ' - ' + r.salesperson : ''}`,
+          item_name: r.item,
+          quantity: r.quantity,
+          cogs: r.cogs,
+          profit: r.profit,
+          category: r.category,
+          product_line: r.product_line,
+          salesperson: r.salesperson,
         }));
       }
-
-      // Store line items for drill-down on main table
-      setLastImportedLines(parsePreview.records);
 
       const data = await api.post('/sales/import', { records });
       setImportResult(data);
@@ -504,10 +507,7 @@ export default function SalesPage({ user }: Props) {
             <tbody>
               {customerTotals.map((ct) => {
                 const isExpanded = expandedSale === ct.name;
-                const lineItems = lastImportedLines.filter(l =>
-                  l.customer_name === ct.name ||
-                  (ct.shop_name && l.customer_name === ct.shop_name)
-                );
+                const hasDetailedItems = ct.items.some(s => s.item_name);
                 return (
                   <>
                     <tr
@@ -545,8 +545,7 @@ export default function SalesPage({ user }: Props) {
                       <tr key={`${ct.name}-detail`}>
                         <td colSpan={6} className="p-0">
                           <div className="bg-navy-50 border-y border-navy-100">
-                            {/* Show line items from last import if available */}
-                            {lineItems.length > 0 ? (
+                            {hasDetailedItems ? (
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="text-navy-400">
@@ -561,24 +560,23 @@ export default function SalesPage({ user }: Props) {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {lineItems.map((item, j) => (
+                                  {ct.items.map((sale, j) => (
                                     <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
-                                      <td className="py-1.5 px-4 pl-10 text-navy-600">{item.date}</td>
-                                      <td className="py-1.5 px-3 font-medium text-navy-800">{item.item}</td>
-                                      <td className="py-1.5 px-3 text-right text-navy-600">{item.quantity}</td>
-                                      <td className="py-1.5 px-3 text-right text-green-600">${item.amount.toFixed(2)}</td>
-                                      <td className="py-1.5 px-3 text-right text-navy-500">${item.cogs.toFixed(2)}</td>
-                                      <td className={`py-1.5 px-3 text-right ${item.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                        ${item.profit.toFixed(2)}
+                                      <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
+                                      <td className="py-1.5 px-3 font-medium text-navy-800">{sale.item_name || '-'}</td>
+                                      <td className="py-1.5 px-3 text-right text-navy-600">{sale.quantity || '-'}</td>
+                                      <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
+                                      <td className="py-1.5 px-3 text-right text-navy-500">${(sale.cogs || 0).toFixed(2)}</td>
+                                      <td className={`py-1.5 px-3 text-right ${(sale.profit || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                        ${(sale.profit || 0).toFixed(2)}
                                       </td>
-                                      <td className="py-1.5 px-3 text-navy-500">{item.category || '-'}</td>
-                                      <td className="py-1.5 px-3 text-navy-500">{item.product_line || '-'}</td>
+                                      <td className="py-1.5 px-3 text-navy-500">{sale.category || '-'}</td>
+                                      <td className="py-1.5 px-3 text-navy-500">{sale.product_line || '-'}</td>
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
                             ) : (
-                              /* Fall back to showing individual DB records */
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="text-navy-400">
