@@ -198,11 +198,15 @@ export default function SalesPage({ user }: Props) {
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Filters
+  const [filterCustomer, setFilterCustomer] = useState<string>('');
+  const [filterSalesperson, setFilterSalesperson] = useState<string>('');
+
   useEffect(() => { loadSales(); }, []);
 
   const loadSales = async () => {
     try {
-      const data = await api.get('/sales', { limit: '500' });
+      const data = await api.get('/sales', { limit: '2000' });
       setSales(data.sales);
     } catch (err) {
       console.error(err);
@@ -278,8 +282,19 @@ export default function SalesPage({ user }: Props) {
     }
   };
 
-  // Group sales by customer for the main table
-  const groupedSales = sales.reduce<Record<string, SalesData[]>>((acc, sale) => {
+  // Build unique filter options from all sales data
+  const allCustomers = [...new Set(sales.map(s => s.customer_name || s.shop_name || '').filter(Boolean))].sort();
+  const allSalespersons = [...new Set(sales.map(s => s.salesperson || '').filter(Boolean))].sort();
+
+  // Apply filters
+  const filteredSales = sales.filter(s => {
+    if (filterCustomer && (s.customer_name || s.shop_name || '') !== filterCustomer) return false;
+    if (filterSalesperson && (s.salesperson || '') !== filterSalesperson) return false;
+    return true;
+  });
+
+  // Group filtered sales by customer
+  const groupedSales = filteredSales.reduce<Record<string, SalesData[]>>((acc, sale) => {
     const key = sale.customer_name || sale.shop_name || 'Unmatched';
     if (!acc[key]) acc[key] = [];
     acc[key].push(sale);
@@ -289,11 +304,32 @@ export default function SalesPage({ user }: Props) {
   const customerTotals = Object.entries(groupedSales).map(([name, items]) => ({
     name,
     total: items.reduce((s, i) => s + (i.sale_amount || 0), 0),
+    totalProfit: items.reduce((s, i) => s + (i.profit || 0), 0),
     count: items.length,
     shop_name: items[0]?.shop_name || null,
+    salesperson: items.find(i => i.salesperson)?.salesperson || '',
     dates: items.map(i => i.sale_date).filter(Boolean).sort(),
     items,
   })).sort((a, b) => b.total - a.total);
+
+  // Group a customer's items by invoice date
+  const groupByInvoice = (items: SalesData[]) => {
+    const byDate: Record<string, SalesData[]> = {};
+    items.forEach(item => {
+      const key = item.sale_date || 'unknown';
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(item);
+    });
+    return Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b));
+  };
+
+  const fmtDate = (d: string) => {
+    try {
+      return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    } catch { return d; }
+  };
+
+  const activeFilters = (filterCustomer ? 1 : 0) + (filterSalesperson ? 1 : 0);
 
   return (
     <div>
@@ -311,7 +347,7 @@ export default function SalesPage({ user }: Props) {
                 {first.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} &ndash; {last.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
               </span>
             </div>
-            <span className="text-xs text-brand-600">{sales.length} records &middot; {customerTotals.length} customers</span>
+            <span className="text-xs text-brand-600">{sales.length} records &middot; {allCustomers.length} customers</span>
           </div>
         );
       })()}
@@ -319,7 +355,7 @@ export default function SalesPage({ user }: Props) {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-navy-900">Sales Tracking</h1>
-          <p className="text-navy-500 text-sm mt-1">Import from AccountEdge or log sales manually. Click any customer to see transactions.</p>
+          <p className="text-navy-500 text-sm mt-1">Import from AccountEdge or log sales manually. Click any customer to see invoices.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { setShowImport(!showImport); setParsePreview(null); setImportResult(null); }} className="btn-primary">
@@ -327,6 +363,44 @@ export default function SalesPage({ user }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Filter Bar */}
+      {sales.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <span className="text-xs font-medium text-navy-500 uppercase tracking-wide">Filter by:</span>
+          <select
+            value={filterCustomer}
+            onChange={e => { setFilterCustomer(e.target.value); setExpandedSale(null); }}
+            className="input-field w-auto min-w-[180px] text-sm py-2"
+          >
+            <option value="">All Customers</option>
+            {allCustomers.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {allSalespersons.length > 0 && (
+            <select
+              value={filterSalesperson}
+              onChange={e => { setFilterSalesperson(e.target.value); setExpandedSale(null); }}
+              className="input-field w-auto min-w-[160px] text-sm py-2"
+            >
+              <option value="">All Salespersons</option>
+              {allSalespersons.map(sp => <option key={sp} value={sp}>{sp}</option>)}
+            </select>
+          )}
+          {activeFilters > 0 && (
+            <button
+              onClick={() => { setFilterCustomer(''); setFilterSalesperson(''); setExpandedSale(null); }}
+              className="text-xs text-brand-600 hover:text-brand-800 underline"
+            >
+              Clear filters ({activeFilters})
+            </button>
+          )}
+          {activeFilters > 0 && (
+            <span className="text-xs text-navy-400 ml-auto">
+              Showing {filteredSales.length} of {sales.length} records &middot; {customerTotals.length} customer{customerTotals.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Import section */}
       {showImport && (
@@ -437,22 +511,22 @@ export default function SalesPage({ user }: Props) {
               {/* Import buttons */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => confirmImport('summary')}
+                  onClick={() => confirmImport('detailed')}
                   disabled={importing}
                   className="btn-primary flex-1"
                 >
-                  {importing ? 'Importing...' : `Import Summary (${parsePreview.summaries.length} customer totals)`}
+                  {importing ? 'Importing...' : `Import Detailed (${parsePreview.records.length} line items)`}
                 </button>
                 <button
-                  onClick={() => confirmImport('detailed')}
+                  onClick={() => confirmImport('summary')}
                   disabled={importing}
                   className="btn-secondary flex-1"
                 >
-                  {importing ? 'Importing...' : `Import Detailed (${parsePreview.records.length} line items)`}
+                  {importing ? 'Importing...' : `Import Summary (${parsePreview.summaries.length} customer totals)`}
                 </button>
               </div>
               <p className="text-xs text-navy-400">
-                Summary imports one total per customer. Detailed imports every individual line item.
+                <strong>Detailed</strong> (recommended) imports every line item for full drill-down. Summary imports one total per customer.
               </p>
             </div>
           )}
@@ -481,15 +555,17 @@ export default function SalesPage({ user }: Props) {
         </div>
       )}
 
-      {/* Main Sales Table - grouped by customer with expandable rows */}
+      {/* Main Sales Table - grouped by customer with invoice drill-down */}
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : sales.length === 0 ? (
+      ) : filteredSales.length === 0 ? (
         <div className="card text-center py-12">
-          <p className="text-navy-500">No sales data yet.</p>
-          <p className="text-sm text-navy-400 mt-2">Import a CSV from AccountEdge to get started.</p>
+          <p className="text-navy-500">{activeFilters > 0 ? 'No sales match the selected filters.' : 'No sales data yet.'}</p>
+          <p className="text-sm text-navy-400 mt-2">
+            {activeFilters > 0 ? 'Try adjusting or clearing your filters.' : 'Import a CSV from AccountEdge to get started.'}
+          </p>
         </div>
       ) : (
         <div className="card overflow-x-auto">
@@ -498,16 +574,18 @@ export default function SalesPage({ user }: Props) {
               <tr className="border-b border-navy-100">
                 <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase w-6"></th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Customer</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Revenue</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Transactions</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Date Range</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Source</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Total Revenue</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Total Profit</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Invoices</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Rep</th>
               </tr>
             </thead>
             <tbody>
               {customerTotals.map((ct) => {
                 const isExpanded = expandedSale === ct.name;
                 const hasDetailedItems = ct.items.some(s => s.item_name);
+                const invoiceGroups = groupByInvoice(ct.items);
+                const invoiceCount = invoiceGroups.length;
                 return (
                   <>
                     <tr
@@ -524,21 +602,14 @@ export default function SalesPage({ user }: Props) {
                       <td className="py-3 px-4 text-sm text-right font-bold text-green-600">
                         ${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </td>
+                      <td className={`py-3 px-4 text-sm text-right font-medium ${ct.totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        ${ct.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </td>
                       <td className="py-3 px-4 text-sm text-right text-navy-500">
-                        {ct.count}
+                        {invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''} ({ct.count} items)
                       </td>
                       <td className="py-3 px-4 text-sm text-navy-500">
-                        {ct.dates.length > 0 && (
-                          <>
-                            {new Date(ct.dates[0] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            {ct.dates.length > 1 && (
-                              <> &ndash; {new Date(ct.dates[ct.dates.length - 1] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>
-                            )}
-                          </>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="badge bg-purple-100 text-purple-800">AccountEdge</span>
+                        {ct.salesperson || '-'}
                       </td>
                     </tr>
                     {isExpanded && (
@@ -546,55 +617,103 @@ export default function SalesPage({ user }: Props) {
                         <td colSpan={6} className="p-0">
                           <div className="bg-navy-50 border-y border-navy-100">
                             {hasDetailedItems ? (
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="text-navy-400">
-                                    <th className="text-left py-1.5 px-4 pl-10">Date</th>
-                                    <th className="text-left py-1.5 px-3">Item</th>
-                                    <th className="text-right py-1.5 px-3">Qty</th>
-                                    <th className="text-right py-1.5 px-3">Amount</th>
-                                    <th className="text-right py-1.5 px-3">COGS</th>
-                                    <th className="text-right py-1.5 px-3">Profit</th>
-                                    <th className="text-left py-1.5 px-3">Category</th>
-                                    <th className="text-left py-1.5 px-3">Product Line</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {ct.items.map((sale, j) => (
-                                    <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
-                                      <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
-                                      <td className="py-1.5 px-3 font-medium text-navy-800">{sale.item_name || '-'}</td>
-                                      <td className="py-1.5 px-3 text-right text-navy-600">{sale.quantity || '-'}</td>
-                                      <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
-                                      <td className="py-1.5 px-3 text-right text-navy-500">${(sale.cogs || 0).toFixed(2)}</td>
-                                      <td className={`py-1.5 px-3 text-right ${(sale.profit || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                        ${(sale.profit || 0).toFixed(2)}
-                                      </td>
-                                      <td className="py-1.5 px-3 text-navy-500">{sale.category || '-'}</td>
-                                      <td className="py-1.5 px-3 text-navy-500">{sale.product_line || '-'}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                              <div className="divide-y divide-navy-200">
+                                {invoiceGroups.map(([date, items], gi) => {
+                                  const invTotal = items.reduce((s, i) => s + (i.sale_amount || 0), 0);
+                                  const invProfit = items.reduce((s, i) => s + (i.profit || 0), 0);
+                                  const invCogs = items.reduce((s, i) => s + (i.cogs || 0), 0);
+                                  return (
+                                    <div key={gi} className="py-2">
+                                      {/* Invoice header */}
+                                      <div className="flex items-center justify-between px-4 pl-10 py-1.5">
+                                        <span className="text-xs font-bold text-navy-800">
+                                          Invoice: {fmtDate(date)}
+                                        </span>
+                                        <span className="text-xs text-navy-500">
+                                          {items.length} item{items.length !== 1 ? 's' : ''}
+                                        </span>
+                                      </div>
+                                      {/* Line items */}
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="text-navy-400">
+                                            <th className="text-left py-1 px-4 pl-14">Item</th>
+                                            <th className="text-right py-1 px-3">Qty</th>
+                                            <th className="text-right py-1 px-3">Amount</th>
+                                            <th className="text-right py-1 px-3">COGS</th>
+                                            <th className="text-right py-1 px-3">Profit</th>
+                                            <th className="text-left py-1 px-3">Category</th>
+                                            <th className="text-left py-1 px-3">Product Line</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {items.map((sale, j) => (
+                                            <tr key={j} className="border-t border-navy-100/30 hover:bg-white/50">
+                                              <td className="py-1.5 px-4 pl-14 font-medium text-navy-800">{sale.item_name || '-'}</td>
+                                              <td className="py-1.5 px-3 text-right text-navy-600">{sale.quantity || '-'}</td>
+                                              <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
+                                              <td className="py-1.5 px-3 text-right text-navy-500">${(sale.cogs || 0).toFixed(2)}</td>
+                                              <td className={`py-1.5 px-3 text-right ${(sale.profit || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                                ${(sale.profit || 0).toFixed(2)}
+                                              </td>
+                                              <td className="py-1.5 px-3 text-navy-500">{sale.category || '-'}</td>
+                                              <td className="py-1.5 px-3 text-navy-500">{sale.product_line || '-'}</td>
+                                            </tr>
+                                          ))}
+                                          {/* Invoice total row */}
+                                          <tr className="bg-navy-100/50 font-semibold">
+                                            <td className="py-1.5 px-4 pl-14 text-navy-700">Invoice Total</td>
+                                            <td className="py-1.5 px-3"></td>
+                                            <td className="py-1.5 px-3 text-right text-green-700">${invTotal.toFixed(2)}</td>
+                                            <td className="py-1.5 px-3 text-right text-navy-600">${invCogs.toFixed(2)}</td>
+                                            <td className={`py-1.5 px-3 text-right ${invProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>${invProfit.toFixed(2)}</td>
+                                            <td className="py-1.5 px-3" colSpan={2}></td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  );
+                                })}
+                                {/* Customer grand total */}
+                                <div className="bg-navy-200/40 px-4 pl-10 py-3 flex items-center justify-between">
+                                  <span className="text-sm font-bold text-navy-900">
+                                    Total Sales &mdash; {ct.shop_name || ct.name}
+                                  </span>
+                                  <div className="flex gap-6 text-sm">
+                                    <span className="font-bold text-green-700">Revenue: ${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    <span className={`font-bold ${ct.totalProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                      Profit: ${ct.totalProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
+                                    <span className="text-navy-600">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''} &middot; {ct.count} items</span>
+                                  </div>
+                                </div>
+                              </div>
                             ) : (
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="text-navy-400">
-                                    <th className="text-left py-1.5 px-4 pl-10">Date</th>
-                                    <th className="text-right py-1.5 px-3">Amount</th>
-                                    <th className="text-left py-1.5 px-3">Details</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {ct.items.map((sale, j) => (
-                                    <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
-                                      <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
-                                      <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
-                                      <td className="py-1.5 px-3 text-navy-600">{sale.memo || '-'}</td>
+                              /* Fallback for summary-only data */
+                              <div>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-navy-400">
+                                      <th className="text-left py-1.5 px-4 pl-10">Date</th>
+                                      <th className="text-right py-1.5 px-3">Amount</th>
+                                      <th className="text-left py-1.5 px-3">Details</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody>
+                                    {ct.items.map((sale, j) => (
+                                      <tr key={j} className="border-t border-navy-100/50 hover:bg-white/50">
+                                        <td className="py-1.5 px-4 pl-10 text-navy-600">{sale.sale_date}</td>
+                                        <td className="py-1.5 px-3 text-right text-green-600">${sale.sale_amount?.toFixed(2)}</td>
+                                        <td className="py-1.5 px-3 text-navy-600">{sale.memo || '-'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <div className="bg-navy-200/40 px-4 pl-10 py-3 flex items-center justify-between">
+                                  <span className="text-sm font-bold text-navy-900">Total Sales</span>
+                                  <span className="text-sm font-bold text-green-700">${ct.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </td>
