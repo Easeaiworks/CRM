@@ -29,6 +29,13 @@ const SEARCH_PATTERNS = [
 
 const ACCOUNT_PATTERN = /\b(?:open|go\s*to|show|pull\s*up|view)\s+(.+?)(?:\s+account)?$/i;
 
+// Patterns for sales/invoice customer lookups
+const SALES_CUSTOMER_PATTERNS = [
+  /\b(.+?)\s+(?:invoices?|sales|revenue|transactions?|orders?)\b/i,
+  /\b(?:invoices?|sales|revenue|transactions?|orders?)\s+(?:for|from|of)\s+(.+)/i,
+  /\b(?:show|pull\s*up|view|get|find)\s+(.+?)\s+(?:invoices?|sales|revenue|transactions?)\b/i,
+];
+
 export function useVoiceNavigation(
   onNavigate: (path: string) => void,
   onSearch?: (query: string) => void
@@ -60,6 +67,17 @@ export function useVoiceNavigation(
           onNavigate(route.path);
           return;
         }
+      }
+    }
+
+    // Check for sales/invoice customer lookup (e.g. "parliament auto body invoices")
+    for (const pattern of SALES_CUSTOMER_PATTERNS) {
+      const match = cleaned.match(pattern);
+      const customerName = (match?.[1] || match?.[2] || '').trim();
+      if (customerName && customerName.length > 2) {
+        showFeedback(`Showing sales for "${customerName}"`);
+        onNavigate(`/sales?customer=${encodeURIComponent(customerName)}`);
+        return;
       }
     }
 

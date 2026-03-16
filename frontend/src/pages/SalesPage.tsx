@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { User, SalesData } from '../types';
 
@@ -188,6 +189,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default function SalesPage({ user }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [sales, setSales] = useState<SalesData[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
@@ -201,8 +203,60 @@ export default function SalesPage({ user }: Props) {
   // Filters
   const [filterCustomer, setFilterCustomer] = useState<string>('');
   const [filterSalesperson, setFilterSalesperson] = useState<string>('');
+  const [voiceMatchFeedback, setVoiceMatchFeedback] = useState<string>('');
 
   useEffect(() => { loadSales(); }, []);
+
+  // Handle ?customer= URL param (from voice navigation) — fuzzy match to actual customer names
+  useEffect(() => {
+    const customerParam = searchParams.get('customer');
+    if (customerParam && sales.length > 0) {
+      const query = customerParam.toLowerCase();
+      const customers = [...new Set(sales.map(s => s.customer_name || s.shop_name || '').filter(Boolean))];
+
+      // Try exact match first
+      const exact = customers.find(c => c.toLowerCase() === query);
+      if (exact) {
+        setFilterCustomer(exact);
+        setExpandedSale(exact);
+        setVoiceMatchFeedback('');
+      } else {
+        // Fuzzy match — find best substring/contains match
+        const contains = customers.filter(c => c.toLowerCase().includes(query) || query.includes(c.toLowerCase()));
+        if (contains.length === 1) {
+          setFilterCustomer(contains[0]);
+          setExpandedSale(contains[0]);
+          setVoiceMatchFeedback('');
+        } else if (contains.length > 1) {
+          // Multiple matches — pick the closest one by length similarity
+          const best = contains.sort((a, b) =>
+            Math.abs(a.length - customerParam.length) - Math.abs(b.length - customerParam.length)
+          )[0];
+          setFilterCustomer(best);
+          setExpandedSale(best);
+          setVoiceMatchFeedback(`Matched "${customerParam}" to "${best}"`);
+        } else {
+          // No substring match — try word overlap
+          const queryWords = query.split(/\s+/);
+          const scored = customers.map(c => {
+            const cWords = c.toLowerCase().split(/\s+/);
+            const overlap = queryWords.filter(w => cWords.some(cw => cw.includes(w) || w.includes(cw))).length;
+            return { name: c, score: overlap };
+          }).filter(s => s.score > 0).sort((a, b) => b.score - a.score);
+
+          if (scored.length > 0) {
+            setFilterCustomer(scored[0].name);
+            setExpandedSale(scored[0].name);
+            setVoiceMatchFeedback(`Matched "${customerParam}" to "${scored[0].name}"`);
+          } else {
+            setVoiceMatchFeedback(`No customer found matching "${customerParam}"`);
+          }
+        }
+      }
+      // Clear the URL param so it doesn't re-trigger
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, sales, setSearchParams]);
 
   const loadSales = async () => {
     try {
@@ -399,6 +453,14 @@ export default function SalesPage({ user }: Props) {
               Showing {filteredSales.length} of {sales.length} records &middot; {customerTotals.length} customer{customerTotals.length !== 1 ? 's' : ''}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Voice match feedback */}
+      {voiceMatchFeedback && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mb-4 flex items-center justify-between">
+          <span className="text-sm text-blue-700">{voiceMatchFeedback}</span>
+          <button onClick={() => setVoiceMatchFeedback('')} className="text-blue-400 hover:text-blue-600 text-xs ml-3">dismiss</button>
         </div>
       )}
 
