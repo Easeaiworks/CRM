@@ -85,7 +85,7 @@ export interface SalesData {
 export interface DashboardMetrics {
   statusCounts: { status: string; count: number }[];
   monthlyRevenue: { month: string; total: number; count: number }[];
-  topAccounts: { shop_name: string; city: string; total_revenue: number; sale_count: number }[];
+  topAccounts: { shop_name: string; salesperson?: string; city?: string; total_revenue: number; sale_count: number }[];
   recentActivities: Activity[];
   dormantCount: number;
   totalAccounts: number;

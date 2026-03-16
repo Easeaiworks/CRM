@@ -144,11 +144,11 @@ export default function DashboardPage({ user }: Props) {
           <h2 className="font-bold text-navy-900 mb-4">Top Accounts by Revenue</h2>
           {metrics.topAccounts.length > 0 ? (
             <div className="space-y-3">
-              {metrics.topAccounts.slice(0, 5).map((a, idx) => (
+              {metrics.topAccounts.slice(0, 10).map((a, idx) => (
                 <div key={idx} className="flex items-center justify-between py-2 border-b border-navy-50 last:border-0">
                   <div>
                     <div className="font-medium text-navy-900 text-sm">{a.shop_name}</div>
-                    <div className="text-xs text-navy-400">{a.city} — {a.sale_count} sales</div>
+                    <div className="text-xs text-navy-400">{a.salesperson || 'Unassigned'} — {a.sale_count} sales</div>
                   </div>
                   <div className="text-sm font-bold text-green-600">
                     ${a.total_revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -411,10 +411,11 @@ async function startServer() {
           : 'SELECT month, SUM(sale_amount) as total, COUNT(*) as count FROM sales_data GROUP BY month ORDER BY month DESC LIMIT 12',
         isRep ? [uid] : []);
 
+      // Top accounts by revenue — pulled from sales report data (customer_name), not just matched accounts
       const topAccounts = await queryAll(
         isRep
-          ? 'SELECT a.shop_name, a.city, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s JOIN accounts a ON s.account_id=a.id WHERE s.rep_id = $1 AND s.account_id IS NOT NULL GROUP BY a.shop_name, a.city ORDER BY total_revenue DESC LIMIT 10'
-          : 'SELECT a.shop_name, a.city, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s JOIN accounts a ON s.account_id=a.id WHERE s.account_id IS NOT NULL GROUP BY a.shop_name, a.city ORDER BY total_revenue DESC LIMIT 10',
+          ? 'SELECT s.customer_name as shop_name, s.salesperson, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s WHERE s.rep_id = $1 AND s.customer_name IS NOT NULL GROUP BY s.customer_name, s.salesperson ORDER BY total_revenue DESC LIMIT 15'
+          : 'SELECT s.customer_name as shop_name, s.salesperson, SUM(s.sale_amount) as total_revenue, COUNT(s.id) as sale_count FROM sales_data s WHERE s.customer_name IS NOT NULL GROUP BY s.customer_name, s.salesperson ORDER BY total_revenue DESC LIMIT 15',
         isRep ? [uid] : []);
 
       const recentActivities = await queryAll(
