@@ -16,6 +16,7 @@ export default function Layout({ user, onLogout, children }: LayoutProps) {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: '\u{1F4CA}' },
+    { path: '/report', label: 'Report', icon: '\u{1F4CB}' },
     { path: '/accounts', label: 'Accounts', icon: '\u{1F3E2}' },
     { path: '/sales', label: 'Sales', icon: '\u{1F4B0}' },
   ];

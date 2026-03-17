@@ -890,6 +890,32 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Manager team digest — all reps combined
+  app.get('/api/notifications/team-digest', authenticate, async (req, res) => {
+    try {
+      const currentUser = await queryOne('SELECT role FROM users WHERE id=$1', [req.user.userId]);
+      if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'manager')) {
+        return res.status(403).json({ error: 'Manager or admin access required' });
+      }
+
+      const reps = await queryAll("SELECT id, first_name, last_name FROM users WHERE is_active = true ORDER BY first_name");
+      const teamDigest = [];
+      for (const rep of reps) {
+        const digest = await generateDigestForUser(rep.id);
+        if (digest) {
+          teamDigest.push({
+            rep: { id: rep.id, first_name: rep.first_name, last_name: rep.last_name },
+            dueFollowUps: digest.dueFollowUps.map(a => ({ id: a.id, shop_name: a.shop_name, follow_up_date: a.follow_up_date, note: a.follow_up_note })),
+            upcomingFollowUps: digest.upcomingFollowUps.map(a => ({ id: a.id, shop_name: a.shop_name, follow_up_date: a.follow_up_date, note: a.follow_up_note })),
+            dormantCount: digest.dormantAccounts.length,
+            newNotesCount: digest.newNotes.length
+          });
+        }
+      }
+      res.json({ teamDigest });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ─── FOLLOW-UP ROUTES ───
   app.post('/api/accounts/:id/follow-up', authenticate, async (req, res) => {
     try {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 import { User, DashboardMetrics, STATUS_LABELS, STATUS_COLORS } from '../types';
+import DailyDigest from '../components/dashboard/DailyDigest';
 
 interface Props { user: User }
 
@@ -45,6 +46,9 @@ export default function DashboardPage({ user }: Props) {
           <p className="text-navy-500 text-xs sm:text-sm mt-1">Welcome back, {user.first_name}</p>
         </div>
       </div>
+
+      {/* Daily Report — shows on open, dismissable */}
+      <DailyDigest user={user} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
