@@ -20,10 +20,11 @@ export default function AccountDetailPage({ user }: Props) {
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
-  // Activity input
-  const [showActivityForm, setShowActivityForm] = useState(false);
-  const [activityType, setActivityType] = useState('call');
-  const [activityDesc, setActivityDesc] = useState('');
+  // Note activity type (optional dropdown beside note)
+  const [noteActivityType, setNoteActivityType] = useState('none');
+
+  // Auto-log toast
+  const [autoLogToast, setAutoLogToast] = useState('');
 
   // Follow-up scheduling
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -59,7 +60,15 @@ export default function AccountDetailPage({ user }: Props) {
         content: newNote.trim(),
         is_voice_transcribed: isListening
       });
+      // If an activity type was selected, also log the activity
+      if (noteActivityType !== 'none') {
+        await api.post(`/accounts/${id}/activities`, {
+          activity_type: noteActivityType,
+          description: newNote.trim()
+        });
+      }
       setNewNote('');
+      setNoteActivityType('none');
       loadAccount();
     } catch (err) {
       console.error(err);
@@ -68,17 +77,23 @@ export default function AccountDetailPage({ user }: Props) {
     }
   };
 
-  const logActivity = async () => {
+  // Auto-log: fires native action AND logs the activity automatically
+  const handleContactAction = async (type: 'call' | 'sms' | 'email', href: string) => {
+    // Fire the native action
+    window.location.href = href;
+    // Auto-log the activity
     try {
+      const actType = type === 'sms' ? 'text' : type;
       await api.post(`/accounts/${id}/activities`, {
-        activity_type: activityType,
-        description: activityDesc || null
+        activity_type: actType,
+        description: `${actType.charAt(0).toUpperCase() + actType.slice(1)} initiated from app`
       });
-      setShowActivityForm(false);
-      setActivityDesc('');
-      loadAccount();
+      setAutoLogToast(`${actType.charAt(0).toUpperCase() + actType.slice(1)} logged`);
+      setTimeout(() => setAutoLogToast(''), 3000);
+      // Refresh to show in timeline
+      setTimeout(() => loadAccount(), 1000);
     } catch (err) {
-      console.error(err);
+      console.error('Auto-log failed:', err);
     }
   };
 
@@ -156,18 +171,18 @@ export default function AccountDetailPage({ user }: Props) {
       </div>
 
       {/* ═══ CONTACT ACTION BAR ═══ */}
-      {/* Big tappable buttons — call opens dialer, text opens messaging, email opens mail app */}
+      {/* Tap to call/text/email — auto-logs the activity */}
       {(hasPhone || hasEmail) && !editing && (
         <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-6">
           {hasPhone ? (
-            <a
-              href={`tel:${phoneHref}`}
+            <button
+              onClick={() => handleContactAction('call', `tel:${phoneHref}`)}
               className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors active:scale-95"
             >
               <span className="text-2xl">📞</span>
               <span className="text-xs sm:text-sm font-medium">Call</span>
               <span className="text-[10px] text-green-500 hidden sm:block truncate max-w-full px-2">{account.phone}</span>
-            </a>
+            </button>
           ) : (
             <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
               <span className="text-2xl opacity-40">📞</span>
@@ -176,14 +191,14 @@ export default function AccountDetailPage({ user }: Props) {
           )}
 
           {hasPhone ? (
-            <a
-              href={`sms:${phoneHref}`}
+            <button
+              onClick={() => handleContactAction('sms', `sms:${phoneHref}`)}
               className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors active:scale-95"
             >
               <span className="text-2xl">💬</span>
               <span className="text-xs sm:text-sm font-medium">Text</span>
               <span className="text-[10px] text-blue-500 hidden sm:block truncate max-w-full px-2">{account.phone}</span>
-            </a>
+            </button>
           ) : (
             <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
               <span className="text-2xl opacity-40">💬</span>
@@ -192,20 +207,27 @@ export default function AccountDetailPage({ user }: Props) {
           )}
 
           {hasEmail ? (
-            <a
-              href={`mailto:${account.email}`}
+            <button
+              onClick={() => handleContactAction('email', `mailto:${account.email}`)}
               className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 transition-colors active:scale-95"
             >
               <span className="text-2xl">📧</span>
               <span className="text-xs sm:text-sm font-medium">Email</span>
               <span className="text-[10px] text-purple-500 hidden sm:block truncate max-w-full px-2">{account.email}</span>
-            </a>
+            </button>
           ) : (
             <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
               <span className="text-2xl opacity-40">📧</span>
               <span className="text-xs sm:text-sm font-medium">No email</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Auto-log toast */}
+      {autoLogToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-lg animate-slide-down">
+          ✓ {autoLogToast}
         </div>
       )}
 
@@ -284,37 +306,32 @@ export default function AccountDetailPage({ user }: Props) {
 
         {/* Right column: Notes & Activities */}
         <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-          {/* Quick note input */}
+          {/* Add Note — with optional activity type dropdown */}
           <div className="card">
             <h3 className="font-bold text-navy-900 mb-3">Add Note</h3>
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Type a note or use voice input..."
-                  className="input-field min-h-[60px] resize-none pr-10"
-                  rows={2}
-                />
-                {isSupported && (
-                  <button
-                    onClick={isListening ? stopListening : startListening}
-                    className={`absolute right-2 top-2 p-1.5 rounded-lg transition-colors ${
-                      isListening ? 'text-brand-500 bg-brand-50' : 'text-navy-400 hover:text-navy-600'
-                    }`}
-                    title={isListening ? 'Stop recording' : 'Voice input'}
-                  >
-                    {isListening && <div className="absolute inset-0 bg-brand-500/20 rounded-full voice-pulse" />}
-                    <svg className="w-5 h-5 relative" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-              <button onClick={saveNote} disabled={savingNote || !newNote.trim()} className="btn-primary self-end">
-                {savingNote ? '...' : 'Save'}
-              </button>
+            <div className="relative">
+              <textarea
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="Type a note or use voice input..."
+                className="input-field min-h-[60px] resize-none pr-10 w-full"
+                rows={2}
+              />
+              {isSupported && (
+                <button
+                  onClick={isListening ? stopListening : startListening}
+                  className={`absolute right-2 top-2 p-1.5 rounded-lg transition-colors ${
+                    isListening ? 'text-brand-500 bg-brand-50' : 'text-navy-400 hover:text-navy-600'
+                  }`}
+                  title={isListening ? 'Stop recording' : 'Voice input'}
+                >
+                  {isListening && <div className="absolute inset-0 bg-brand-500/20 rounded-full voice-pulse" />}
+                  <svg className="w-5 h-5 relative" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                  </svg>
+                </button>
+              )}
             </div>
             {isListening && (
               <div className="text-xs text-brand-500 mt-2 flex items-center gap-1">
@@ -322,51 +339,25 @@ export default function AccountDetailPage({ user }: Props) {
                 Listening... speak now
               </div>
             )}
-          </div>
-
-          {/* Log Activity */}
-          <div className="card">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
-              <h3 className="font-bold text-navy-900">Log Activity</h3>
-              {!showActivityForm && (
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { type: 'call', icon: '📞', label: 'Call' },
-                    { type: 'email', icon: '📧', label: 'Email' },
-                    { type: 'visit', icon: '🚗', label: 'Visit' },
-                    { type: 'meeting', icon: '📋', label: 'Meeting' },
-                  ].map(a => (
-                    <button
-                      key={a.type}
-                      onClick={() => { setActivityType(a.type); setShowActivityForm(true); }}
-                      className="btn-ghost text-sm py-1 px-3"
-                    >
-                      {a.icon} {a.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-center gap-2 mt-3">
+              <select
+                value={noteActivityType}
+                onChange={e => setNoteActivityType(e.target.value)}
+                className="input-field w-auto text-sm"
+              >
+                <option value="none">Note only</option>
+                <option value="call">📞 Call</option>
+                <option value="email">📧 Email</option>
+                <option value="visit">🚗 Visit</option>
+                <option value="meeting">📋 Meeting</option>
+              </select>
+              <span className="text-xs text-navy-400 hidden sm:inline">
+                {noteActivityType !== 'none' ? 'Will also log this as an activity' : 'Optional: tag as activity type'}
+              </span>
+              <button onClick={saveNote} disabled={savingNote || !newNote.trim()} className="btn-primary ml-auto">
+                {savingNote ? '...' : 'Save'}
+              </button>
             </div>
-            {showActivityForm && (
-              <div className="flex flex-col sm:flex-row gap-2">
-                <select value={activityType} onChange={e => setActivityType(e.target.value)} className="input-field w-full sm:w-auto">
-                  <option value="call">Call</option>
-                  <option value="email">Email</option>
-                  <option value="visit">Visit</option>
-                  <option value="meeting">Meeting</option>
-                </select>
-                <input
-                  value={activityDesc}
-                  onChange={e => setActivityDesc(e.target.value)}
-                  placeholder="Quick description..."
-                  className="input-field flex-1"
-                />
-                <div className="flex gap-2">
-                  <button onClick={logActivity} className="btn-primary flex-1 sm:flex-none">Log</button>
-                  <button onClick={() => setShowActivityForm(false)} className="btn-ghost flex-1 sm:flex-none">Cancel</button>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Follow-up Scheduling */}

@@ -74,10 +74,37 @@ export default function AccountsPage({ user }: Props) {
     setBranchFilter('');
   };
 
+  const [autoLogToast, setAutoLogToast] = useState('');
+
+  // Auto-log: fires native action AND logs the activity
+  const handleContactAction = async (e: React.MouseEvent, accountId: number, type: 'call' | 'sms' | 'email', href: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    window.location.href = href;
+    try {
+      const actType = type === 'sms' ? 'text' : type;
+      await api.post(`/accounts/${accountId}/activities`, {
+        activity_type: actType,
+        description: `${actType.charAt(0).toUpperCase() + actType.slice(1)} initiated from app`
+      });
+      setAutoLogToast(`${actType.charAt(0).toUpperCase() + actType.slice(1)} logged`);
+      setTimeout(() => setAutoLogToast(''), 3000);
+    } catch (err) {
+      console.error('Auto-log failed:', err);
+    }
+  };
+
   const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'];
 
   return (
     <div>
+      {/* Auto-log toast */}
+      {autoLogToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-lg animate-slide-down">
+          ✓ {autoLogToast}
+        </div>
+      )}
+
       {/* ═══ TOP CATEGORY TOGGLE ═══ */}
       <div className="flex items-center gap-1 p-1 bg-navy-100 rounded-xl mb-4 sm:mb-6">
         <button
@@ -197,15 +224,15 @@ export default function AccountsPage({ user }: Props) {
                     <span className="badge badge-active flex-shrink-0">Customer</span>
                   )}
                 </div>
-                {/* Large contact action buttons — tap to call/text/email directly */}
+                {/* Large contact action buttons — tap to call/text/email + auto-log */}
                 <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-navy-100">
                   {account.phone ? (
-                    <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`}
-                      onClick={e => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${account.phone!.replace(/[^\d+]/g, '')}`; }}
-                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 active:scale-95 transition-all no-underline">
+                    <button
+                      onClick={e => handleContactAction(e, account.id, 'call', `tel:${account.phone!.replace(/[^\d+]/g, '')}`)}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 active:scale-95 transition-all">
                       <span className="text-xl">📞</span>
                       <span className="text-xs font-semibold">Call</span>
-                    </a>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-gray-50 text-gray-300">
                       <span className="text-xl opacity-40">📞</span>
@@ -213,12 +240,12 @@ export default function AccountsPage({ user }: Props) {
                     </div>
                   )}
                   {account.phone ? (
-                    <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`}
-                      onClick={e => { e.stopPropagation(); e.preventDefault(); window.location.href = `sms:${account.phone!.replace(/[^\d+]/g, '')}`; }}
-                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 active:scale-95 transition-all no-underline">
+                    <button
+                      onClick={e => handleContactAction(e, account.id, 'sms', `sms:${account.phone!.replace(/[^\d+]/g, '')}`)}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 active:scale-95 transition-all">
                       <span className="text-xl">💬</span>
                       <span className="text-xs font-semibold">Text</span>
-                    </a>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-gray-50 text-gray-300">
                       <span className="text-xl opacity-40">💬</span>
@@ -226,12 +253,12 @@ export default function AccountsPage({ user }: Props) {
                     </div>
                   )}
                   {account.email ? (
-                    <a href={`mailto:${account.email}`}
-                      onClick={e => { e.stopPropagation(); e.preventDefault(); window.location.href = `mailto:${account.email}`; }}
-                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 active:scale-95 transition-all no-underline">
+                    <button
+                      onClick={e => handleContactAction(e, account.id, 'email', `mailto:${account.email}`)}
+                      className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 active:scale-95 transition-all">
                       <span className="text-xl">📧</span>
                       <span className="text-xs font-semibold">Email</span>
-                    </a>
+                    </button>
                   ) : (
                     <div className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-gray-50 text-gray-300">
                       <span className="text-xl opacity-40">📧</span>
