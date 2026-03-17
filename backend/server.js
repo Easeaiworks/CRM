@@ -137,16 +137,19 @@ async function startServer() {
   app.use('/api/auth/login', authLimiter);
 
   // ─── AUTH ROUTES ───
-  app.post('/api/auth/register', async (req, res) => {
+  app.post('/api/auth/register', authenticate, async (req, res) => {
     try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required to create users' });
       const { email, password, first_name, last_name, role } = req.body;
       if (!email || !password || !first_name || !last_name) return res.status(400).json({ error: 'All fields required' });
-      if (await queryOne('SELECT id FROM users WHERE email = $1', [email])) return res.status(409).json({ error: 'Email exists' });
+      if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      if (await queryOne('SELECT id FROM users WHERE email = $1', [email])) return res.status(409).json({ error: 'Email already exists' });
+      const validRole = ['rep', 'manager', 'admin'].includes(role) ? role : 'rep';
       const hash = await bcrypt.hash(password, 12);
       const { lastId } = await execute('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5)',
-        [email, hash, first_name, last_name, role || 'rep']);
-      res.status(201).json({ token: generateToken({ userId: lastId, email, role: role || 'rep' }),
-        user: { id: lastId, email, first_name, last_name, role: role || 'rep' } });
+        [email, hash, first_name, last_name, validRole]);
+      await logAudit(req, 'user', lastId, 'create', { email, role: validRole, created_by: req.user.email });
+      res.status(201).json({ user: { id: lastId, email, first_name, last_name, role: validRole } });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -169,7 +172,78 @@ async function startServer() {
   });
 
   app.get('/api/auth/users', authenticate, async (req, res) => {
+    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+      return res.status(403).json({ error: 'Admin or manager access required' });
+    }
     res.json({ users: await queryAll('SELECT id,email,first_name,last_name,role,is_active,last_login,created_at FROM users ORDER BY first_name') });
+  });
+
+  // ─── ADMIN: Reset user password ───
+  app.put('/api/auth/users/:id/reset-password', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      const { password } = req.body;
+      if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      const target = await queryOne('SELECT id, email, first_name, last_name FROM users WHERE id=$1', [req.params.id]);
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      const hash = await bcrypt.hash(password, 12);
+      await execute('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, req.params.id]);
+      await logAudit(req, 'user', parseInt(req.params.id), 'update', { action: 'password_reset', target_email: target.email });
+      res.json({ message: `Password reset for ${target.first_name} ${target.last_name}` });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── ADMIN: Revoke / restore user access ───
+  app.put('/api/auth/users/:id/toggle-active', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      if (parseInt(req.params.id) === req.user.userId) return res.status(400).json({ error: 'Cannot deactivate yourself' });
+      const target = await queryOne('SELECT id, email, first_name, last_name, is_active FROM users WHERE id=$1', [req.params.id]);
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      const newStatus = !target.is_active;
+      await execute('UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2', [newStatus, req.params.id]);
+      await logAudit(req, 'user', parseInt(req.params.id), 'update', { action: newStatus ? 'restore_access' : 'revoke_access', target_email: target.email });
+      res.json({ message: `${target.first_name} ${target.last_name} is now ${newStatus ? 'active' : 'deactivated'}`, is_active: newStatus });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── ADMIN: Change user role ───
+  app.put('/api/auth/users/:id/role', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      const { role } = req.body;
+      if (!['rep', 'manager', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role. Must be rep, manager, or admin' });
+      if (parseInt(req.params.id) === req.user.userId) return res.status(400).json({ error: 'Cannot change your own role' });
+      const target = await queryOne('SELECT id, email, first_name, last_name, role FROM users WHERE id=$1', [req.params.id]);
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      await execute('UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2', [role, req.params.id]);
+      await logAudit(req, 'user', parseInt(req.params.id), 'update', { action: 'role_change', from: target.role, to: role, target_email: target.email });
+      res.json({ message: `${target.first_name} ${target.last_name} role changed to ${role}`, role });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── ADMIN: Update user details ───
+  app.put('/api/auth/users/:id', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      const { first_name, last_name, email } = req.body;
+      const target = await queryOne('SELECT * FROM users WHERE id=$1', [req.params.id]);
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      const updates = ['updated_at = NOW()']; const params = []; let idx = 1;
+      const changes = {};
+      if (first_name) { updates.push(`first_name = $${idx++}`); params.push(first_name); changes.first_name = { from: target.first_name, to: first_name }; }
+      if (last_name) { updates.push(`last_name = $${idx++}`); params.push(last_name); changes.last_name = { from: target.last_name, to: last_name }; }
+      if (email) {
+        const existing = await queryOne('SELECT id FROM users WHERE email = $1 AND id != $2', [email, req.params.id]);
+        if (existing) return res.status(409).json({ error: 'Email already in use' });
+        updates.push(`email = $${idx++}`); params.push(email); changes.email = { from: target.email, to: email };
+      }
+      params.push(req.params.id);
+      await execute(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+      await logAudit(req, 'user', parseInt(req.params.id), 'update', changes);
+      const updated = await queryOne('SELECT id,email,first_name,last_name,role,is_active,last_login,created_at FROM users WHERE id=$1', [req.params.id]);
+      res.json({ user: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // ─── ACCOUNTS ROUTES ───
