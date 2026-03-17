@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface VoiceNavResult {
   command: string;
@@ -54,6 +54,17 @@ export function useVoiceNavigation(
 
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const isSupported = !!SpeechRecognition;
+
+  // Cleanup on unmount — prevents Safari from hanging with orphaned recognition sessions
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) { /* ignore */ }
+        recognitionRef.current = null;
+      }
+      if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
+    };
+  }, []);
 
   const showFeedback = useCallback((msg: string) => {
     setFeedback(msg);
@@ -163,39 +174,53 @@ export function useVoiceNavigation(
   const startListening = useCallback(() => {
     if (!isSupported) return;
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    // Abort any existing session first (Safari can't handle multiple)
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch (_) { /* ignore */ }
+      recognitionRef.current = null;
+    }
 
-    recognition.onstart = () => {
-      setIsListening(true);
-      setFeedback('Listening... say a command');
-    };
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
 
-    recognition.onresult = (event: any) => {
-      const text = event.results[0][0].transcript;
-      processCommand(text);
-    };
+      recognition.onstart = () => {
+        setIsListening(true);
+        setFeedback('Listening... say a command');
+      };
 
-    recognition.onerror = (event: any) => {
-      if (event.error !== 'no-speech') {
-        showFeedback(`Voice error: ${event.error}`);
-      }
+      recognition.onresult = (event: any) => {
+        const text = event.results[0][0].transcript;
+        processCommand(text);
+      };
+
+      recognition.onerror = (event: any) => {
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          showFeedback(`Voice error: ${event.error}`);
+        }
+        setIsListening(false);
+        recognitionRef.current = null;
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        recognitionRef.current = null;
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      showFeedback('Could not start voice recognition');
       setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
+    }
   }, [isSupported, processCommand, showFeedback]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      // Use abort() instead of stop() — abort() is immediate and reliable on Safari
+      try { recognitionRef.current.abort(); } catch (_) { /* ignore */ }
       recognitionRef.current = null;
     }
     setIsListening(false);

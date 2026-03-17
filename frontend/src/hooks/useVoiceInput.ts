@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 interface UseVoiceInputReturn {
   isListening: boolean;
@@ -14,9 +14,21 @@ export function useVoiceInput(onResult?: (text: string) => void): UseVoiceInputR
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
 
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   const isSupported = !!SpeechRecognition;
+
+  // Cleanup on unmount — prevents Safari from hanging with orphaned recognition sessions
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) { /* ignore */ }
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
 
   const startListening = useCallback(() => {
     if (!isSupported) {
@@ -24,53 +36,74 @@ export function useVoiceInput(onResult?: (text: string) => void): UseVoiceInputR
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    // Abort any existing session first (Safari can't handle multiple)
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch (_) { /* ignore */ }
+      recognitionRef.current = null;
+    }
 
-    recognition.onstart = () => {
-      setIsListening(true);
-      setError(null);
-    };
+    try {
+      const recognition = new SpeechRecognition();
+      // CRITICAL: continuous = false for Safari/iOS compatibility
+      // Safari hangs indefinitely with continuous = true
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
 
-    recognition.onresult = (event: any) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
+      recognition.onstart = () => {
+        setIsListening(true);
+        setError(null);
+      };
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript;
-        } else {
-          interimTranscript += result[0].transcript;
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            interimTranscript += result[0].transcript;
+          }
         }
-      }
 
-      const text = finalTranscript || interimTranscript;
-      setTranscript(text);
+        const text = finalTranscript || interimTranscript;
+        setTranscript(text);
 
-      if (finalTranscript && onResult) {
-        onResult(finalTranscript);
-      }
-    };
+        if (finalTranscript && onResultRef.current) {
+          onResultRef.current(finalTranscript);
+        }
+      };
 
-    recognition.onerror = (event: any) => {
-      setError(`Voice error: ${event.error}`);
+      recognition.onerror = (event: any) => {
+        // 'no-speech' is normal (user didn't say anything), not a real error
+        // 'aborted' happens on cleanup, also not a real error
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          setError(`Voice error: ${event.error}`);
+        }
+        setIsListening(false);
+        recognitionRef.current = null;
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        recognitionRef.current = null;
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      setError(`Could not start voice: ${err.message || 'unknown error'}`);
       setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [isSupported, onResult]);
+    }
+  }, [isSupported]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      // Use abort() instead of stop() — abort() is immediate and reliable on Safari
+      // stop() can hang waiting for speech to "finish"
+      try { recognitionRef.current.abort(); } catch (_) { /* ignore */ }
       recognitionRef.current = null;
     }
     setIsListening(false);

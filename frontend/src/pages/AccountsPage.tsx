@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { User, Account, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
 
 interface Props { user: User }
 
 export default function AccountsPage({ user }: Props) {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -96,10 +97,10 @@ export default function AccountsPage({ user }: Props) {
           {/* Mobile: card view */}
           <div className="md:hidden space-y-3">
             {accounts.map((account) => (
-              <Link
+              <div
                 key={account.id}
-                to={`/accounts/${account.id}`}
-                className="card block hover:shadow-md transition-shadow"
+                onClick={() => navigate(`/accounts/${account.id}`)}
+                className="card block hover:shadow-md transition-shadow cursor-pointer"
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -136,7 +137,7 @@ export default function AccountsPage({ user }: Props) {
                     <span className="text-xs text-navy-400 ml-auto">Rep: {account.rep_first_name}</span>
                   )}
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
 

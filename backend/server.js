@@ -551,6 +551,34 @@ async function startServer() {
       }
 
       const results = await queryAll(`SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id WHERE ${where.join(' AND ')} ORDER BY a.shop_name LIMIT 50`, params);
+
+      // If no account results found, also search sales_data for customer names
+      // This catches customers like "Universal Auto" that exist in sales imports but not as accounts
+      if (results.length === 0) {
+        const salesTerms = q.replace(/show|me|find|all|the|get|list|search|for|who|what|which|where/gi, '').trim();
+        if (salesTerms) {
+          const salesResults = await queryAll(
+            `SELECT customer_name, account_id,
+              SUM(sale_amount) as total_revenue,
+              COUNT(*) as sale_count,
+              MAX(sale_date) as last_sale_date
+            FROM sales_data
+            WHERE customer_name ILIKE $1
+            GROUP BY customer_name, account_id
+            ORDER BY total_revenue DESC
+            LIMIT 20`,
+            [`%${salesTerms}%`]
+          );
+          if (salesResults.length > 0) {
+            return res.json({ type: 'sales_customers', results: salesResults.map(r => ({
+              ...r,
+              total_revenue: parseFloat(r.total_revenue),
+              sale_count: parseInt(r.sale_count)
+            })), query: q });
+          }
+        }
+      }
+
       res.json({ type: 'accounts', results, query: q });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

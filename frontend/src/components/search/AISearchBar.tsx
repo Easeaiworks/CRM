@@ -142,6 +142,13 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
               onClick={() => {
                 if (resultType === 'accounts') {
                   onNavigate(`/accounts/${result.id}`);
+                } else if (resultType === 'sales_customers') {
+                  // Navigate to sales page filtered by this customer
+                  if (result.account_id) {
+                    onNavigate(`/sales?customer=${encodeURIComponent(result.customer_name)}`);
+                  } else {
+                    onNavigate(`/sales?customer=${encodeURIComponent(result.customer_name)}`);
+                  }
                 } else {
                   onNavigate(`/accounts/${result.account_id}`);
                 }
@@ -161,6 +168,17 @@ export default function AISearchBar({ onNavigate }: AISearchBarProps) {
                     {result.rep_first_name && (
                       <span className="text-xs text-navy-400">Rep: {result.rep_first_name}</span>
                     )}
+                  </div>
+                </div>
+              ) : resultType === 'sales_customers' ? (
+                <div>
+                  <div className="font-medium text-navy-900 text-sm">{result.customer_name}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs font-medium text-green-600">
+                      ${result.total_revenue?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'} revenue
+                    </span>
+                    <span className="text-xs text-navy-500">{result.sale_count} sale{result.sale_count !== 1 ? 's' : ''}</span>
+                    <span className="badge badge-active">Sales Customer</span>
                   </div>
                 </div>
               ) : (
