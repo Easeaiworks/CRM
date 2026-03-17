@@ -74,7 +74,7 @@ export default function AccountsPage({ user }: Props) {
     setBranchFilter('');
   };
 
-  const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Wasaga Beach'];
+  const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'];
 
   return (
     <div>
@@ -342,7 +342,7 @@ function AddAccountModal({ category, onClose, onCreated }: { category: 'lead' | 
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Wasaga Beach'];
+  const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'];
 
   const handleSubmit = async (e: React.FormEvent, skipDuplicate = false) => {
     e.preventDefault();
