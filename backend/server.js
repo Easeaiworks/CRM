@@ -987,10 +987,73 @@ async function startServer() {
   app.use(express.static(frontendPath));
   app.get('*', (req, res) => { if (!req.path.startsWith('/api')) res.sendFile(path.join(frontendPath, 'index.html')); });
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, '0.0.0.0', async () => {
     console.log(`\n  CRM - CHC Paint & Auto Body Supplies`);
     console.log(`  Server running on http://localhost:${PORT}`);
     console.log(`  Database: Supabase PostgreSQL\n`);
+
+    // Auto-seed customers on first startup if none exist
+    try {
+      const customerCount = await queryOne("SELECT COUNT(*) as count FROM accounts WHERE account_category = 'customer' AND deleted_at IS NULL");
+      if (parseInt(customerCount?.count) === 0) {
+        console.log('  No active customers found — auto-seeding from AccountEdge exports...');
+        const customers = require('./src/customer-seed.json');
+        let imported = 0;
+        for (const c of customers) {
+          try {
+            const existing = await queryOne(
+              'SELECT id FROM accounts WHERE LOWER(shop_name) = LOWER($1) AND deleted_at IS NULL',
+              [c.shop_name]
+            );
+            if (existing) {
+              // Existing lead — upgrade to customer and fill missing data
+              const updates = ["account_category = 'customer'"];
+              const params = [];
+              let idx = 1;
+              if (c.branch) { updates.push(`branch = $${idx++}`); params.push(c.branch); }
+              if (c.address) { updates.push(`address = COALESCE(NULLIF(address,''), $${idx++})`); params.push(c.address); }
+              if (c.city) { updates.push(`city = COALESCE(NULLIF(city,''), $${idx++})`); params.push(c.city); }
+              if (c.province) { updates.push(`province = COALESCE(NULLIF(province,''), $${idx++})`); params.push(c.province); }
+              if (c.postal_code) { updates.push(`postal_code = COALESCE(postal_code, $${idx++})`); params.push(c.postal_code); }
+              if (c.phone) { updates.push(`phone = COALESCE(NULLIF(phone,''), $${idx++})`); params.push(c.phone); }
+              if (c.phone2) { updates.push(`phone2 = COALESCE(phone2, $${idx++})`); params.push(c.phone2); }
+              if (c.email) { updates.push(`email = COALESCE(NULLIF(email,''), $${idx++})`); params.push(c.email); }
+              if (c.contact_names) { updates.push(`contact_names = COALESCE(NULLIF(contact_names,''), $${idx++})`); params.push(c.contact_names); }
+              params.push(existing.id);
+              await execute(`UPDATE accounts SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`, params);
+            } else {
+              await execute(
+                `INSERT INTO accounts (shop_name, address, city, province, postal_code, phone, phone2, email, contact_names, branch, account_category, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'customer','active')`,
+                [c.shop_name, c.address, c.city, c.province, c.postal_code, c.phone, c.phone2, c.email, c.contact_names, c.branch]
+              );
+            }
+            imported++;
+          } catch (err) { /* skip individual errors */ }
+        }
+
+        // Link sales_data to newly created customer accounts
+        const unlinked = await queryAll(
+          'SELECT DISTINCT customer_name FROM sales_data WHERE account_id IS NULL AND customer_name IS NOT NULL'
+        );
+        let linked = 0;
+        for (const row of unlinked) {
+          const match = await queryOne(
+            'SELECT id FROM accounts WHERE LOWER(shop_name) = LOWER($1) AND deleted_at IS NULL',
+            [row.customer_name]
+          );
+          if (match) {
+            await execute('UPDATE sales_data SET account_id = $1 WHERE LOWER(customer_name) = LOWER($2) AND account_id IS NULL', [match.id, row.customer_name]);
+            linked++;
+          }
+        }
+
+        console.log(`  Auto-seed complete: ${imported} customers imported, ${linked} sales records linked`);
+      } else {
+        console.log(`  Active customers: ${customerCount.count} (seed not needed)`);
+      }
+    } catch (err) {
+      console.error('  Auto-seed warning:', err.message);
+    }
   });
 }
 
