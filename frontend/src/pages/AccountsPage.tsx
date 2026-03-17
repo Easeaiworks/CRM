@@ -113,9 +113,28 @@ export default function AccountsPage({ user }: Props) {
                     {STATUS_LABELS[account.status]}
                   </span>
                 </div>
-                <div className="flex gap-3 mt-3 text-xs text-navy-400">
-                  {account.rep_first_name && <span>Rep: {account.rep_first_name}</span>}
-                  {account.phone && <span>📞 {account.phone}</span>}
+                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-navy-100">
+                  {account.phone && (
+                    <>
+                      <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
+                        className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-lg active:scale-95">
+                        📞 Call
+                      </a>
+                      <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
+                        className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-lg active:scale-95">
+                        💬 Text
+                      </a>
+                    </>
+                  )}
+                  {account.email && (
+                    <a href={`mailto:${account.email}`} onClick={e => e.stopPropagation()}
+                      className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-lg active:scale-95">
+                      📧 Email
+                    </a>
+                  )}
+                  {account.rep_first_name && (
+                    <span className="text-xs text-navy-400 ml-auto">Rep: {account.rep_first_name}</span>
+                  )}
                 </div>
               </Link>
             ))}
@@ -161,12 +180,17 @@ export default function AccountsPage({ user }: Props) {
                     <td className="py-3 px-4">
                       <div className="flex gap-2">
                         {account.phone && (
-                          <a href={`tel:${account.phone}`} className="text-green-600 hover:text-green-700" title="Call">
-                            📞
-                          </a>
+                          <>
+                            <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`} className="text-green-600 hover:text-green-700" title="Call">
+                              📞
+                            </a>
+                            <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`} className="text-blue-600 hover:text-blue-700" title="Text">
+                              💬
+                            </a>
+                          </>
                         )}
                         {account.email && (
-                          <a href={`mailto:${account.email}`} className="text-blue-600 hover:text-blue-700" title="Email">
+                          <a href={`mailto:${account.email}`} className="text-purple-600 hover:text-purple-700" title="Email">
                             📧
                           </a>
                         )}

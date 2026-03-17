@@ -124,40 +124,89 @@ export default function AccountDetailPage({ user }: Props) {
     </div>
   );
 
+  // Clean phone for tel:/sms: links
+  const cleanPhone = (phone: string) => phone.replace(/[^\d+]/g, '');
+  const hasPhone = !!account.phone?.trim();
+  const hasEmail = !!account.email?.trim();
+  const phoneHref = hasPhone ? cleanPhone(account.phone!) : '';
+
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6 gap-3">
         <div>
           <button onClick={() => navigate('/accounts')} className="text-sm text-navy-400 hover:text-navy-600 mb-2 flex items-center gap-1">
-            ← Back to Accounts
+            &larr; Back to Accounts
           </button>
-          <h1 className="text-2xl font-bold text-navy-900">{account.shop_name}</h1>
-          <div className="flex items-center gap-3 mt-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-navy-900">{account.shop_name}</h1>
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
             <span className={`badge ${STATUS_COLORS[account.status]}`}>{STATUS_LABELS[account.status]}</span>
             {account.city && <span className="text-sm text-navy-500">{account.city}{account.province ? `, ${account.province}` : ''}</span>}
+            {account.contact_names && <span className="text-sm text-navy-400">{account.contact_names}</span>}
           </div>
         </div>
-        <div className="flex gap-2">
-          {account.phone && (
-            <a href={`tel:${account.phone}`} className="btn-primary flex items-center gap-2">
-              📞 Call
-            </a>
-          )}
-          {account.email && (
-            <a href={`mailto:${account.email}`} className="btn-secondary flex items-center gap-2">
-              📧 Email
-            </a>
-          )}
-          <button onClick={() => setEditing(!editing)} className="btn-ghost">
-            {editing ? 'Cancel' : 'Edit'}
-          </button>
-        </div>
+        <button onClick={() => setEditing(!editing)} className="btn-ghost text-sm self-start">
+          {editing ? 'Cancel' : 'Edit'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* ═══ CONTACT ACTION BAR ═══ */}
+      {/* Big tappable buttons — call opens dialer, text opens messaging, email opens mail app */}
+      {(hasPhone || hasEmail) && !editing && (
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-6">
+          {hasPhone ? (
+            <a
+              href={`tel:${phoneHref}`}
+              className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors active:scale-95"
+            >
+              <span className="text-2xl">📞</span>
+              <span className="text-xs sm:text-sm font-medium">Call</span>
+              <span className="text-[10px] text-green-500 hidden sm:block truncate max-w-full px-2">{account.phone}</span>
+            </a>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
+              <span className="text-2xl opacity-40">📞</span>
+              <span className="text-xs sm:text-sm font-medium">No phone</span>
+            </div>
+          )}
+
+          {hasPhone ? (
+            <a
+              href={`sms:${phoneHref}`}
+              className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition-colors active:scale-95"
+            >
+              <span className="text-2xl">💬</span>
+              <span className="text-xs sm:text-sm font-medium">Text</span>
+              <span className="text-[10px] text-blue-500 hidden sm:block truncate max-w-full px-2">{account.phone}</span>
+            </a>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
+              <span className="text-2xl opacity-40">💬</span>
+              <span className="text-xs sm:text-sm font-medium">No phone</span>
+            </div>
+          )}
+
+          {hasEmail ? (
+            <a
+              href={`mailto:${account.email}`}
+              className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 transition-colors active:scale-95"
+            >
+              <span className="text-2xl">📧</span>
+              <span className="text-xs sm:text-sm font-medium">Email</span>
+              <span className="text-[10px] text-purple-500 hidden sm:block truncate max-w-full px-2">{account.email}</span>
+            </a>
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
+              <span className="text-2xl opacity-40">📧</span>
+              <span className="text-xs sm:text-sm font-medium">No email</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Left column: Account details */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1 space-y-4 sm:space-y-6">
           {/* Contact Info */}
           <div className="card">
             <h3 className="font-bold text-navy-900 mb-4">Contact Information</h3>
@@ -173,11 +222,11 @@ export default function AccountDetailPage({ user }: Props) {
                 </div>
                 <div>
                   <label className="block text-xs text-navy-500 mb-1">Phone</label>
-                  <input className="input-field" value={editForm.phone || ''} onChange={e => setEditForm(f => ({...f, phone: e.target.value}))} />
+                  <input className="input-field" type="tel" value={editForm.phone || ''} onChange={e => setEditForm(f => ({...f, phone: e.target.value}))} placeholder="e.g. 613-555-1234" />
                 </div>
                 <div>
                   <label className="block text-xs text-navy-500 mb-1">Email</label>
-                  <input className="input-field" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} />
+                  <input className="input-field" type="email" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} placeholder="e.g. joe@acmecollision.com" />
                 </div>
                 <div>
                   <label className="block text-xs text-navy-500 mb-1">Address</label>
@@ -198,8 +247,8 @@ export default function AccountDetailPage({ user }: Props) {
             ) : (
               <div className="space-y-3 text-sm">
                 <InfoRow label="Contact(s)" value={account.contact_names} />
-                <InfoRow label="Phone" value={account.phone} isLink={`tel:${account.phone}`} />
-                <InfoRow label="Email" value={account.email} isLink={`mailto:${account.email}`} />
+                <InfoRow label="Phone" value={account.phone} href={hasPhone ? `tel:${phoneHref}` : undefined} />
+                <InfoRow label="Email" value={account.email} href={hasEmail ? `mailto:${account.email}` : undefined} />
                 <InfoRow label="Address" value={account.address} />
                 <InfoRow label="City" value={account.city} />
               </div>
@@ -229,7 +278,7 @@ export default function AccountDetailPage({ user }: Props) {
         </div>
 
         {/* Right column: Notes & Activities */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
           {/* Quick note input */}
           <div className="card">
             <h3 className="font-bold text-navy-900 mb-3">Add Note</h3>
@@ -272,25 +321,30 @@ export default function AccountDetailPage({ user }: Props) {
 
           {/* Log Activity */}
           <div className="card">
-            <div className="flex justify-between items-center mb-3">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
               <h3 className="font-bold text-navy-900">Log Activity</h3>
               {!showActivityForm && (
-                <div className="flex gap-2">
-                  {['call', 'email', 'visit', 'meeting'].map(type => (
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { type: 'call', icon: '📞', label: 'Call' },
+                    { type: 'email', icon: '📧', label: 'Email' },
+                    { type: 'visit', icon: '🚗', label: 'Visit' },
+                    { type: 'meeting', icon: '📋', label: 'Meeting' },
+                  ].map(a => (
                     <button
-                      key={type}
-                      onClick={() => { setActivityType(type); setShowActivityForm(true); }}
+                      key={a.type}
+                      onClick={() => { setActivityType(a.type); setShowActivityForm(true); }}
                       className="btn-ghost text-sm py-1 px-3"
                     >
-                      {type === 'call' ? '📞' : type === 'email' ? '📧' : type === 'visit' ? '🚗' : '📋'} {type}
+                      {a.icon} {a.label}
                     </button>
                   ))}
                 </div>
               )}
             </div>
             {showActivityForm && (
-              <div className="flex gap-2">
-                <select value={activityType} onChange={e => setActivityType(e.target.value)} className="input-field w-auto">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <select value={activityType} onChange={e => setActivityType(e.target.value)} className="input-field w-full sm:w-auto">
                   <option value="call">Call</option>
                   <option value="email">Email</option>
                   <option value="visit">Visit</option>
@@ -302,8 +356,10 @@ export default function AccountDetailPage({ user }: Props) {
                   placeholder="Quick description..."
                   className="input-field flex-1"
                 />
-                <button onClick={logActivity} className="btn-primary">Log</button>
-                <button onClick={() => setShowActivityForm(false)} className="btn-ghost">Cancel</button>
+                <div className="flex gap-2">
+                  <button onClick={logActivity} className="btn-primary flex-1 sm:flex-none">Log</button>
+                  <button onClick={() => setShowActivityForm(false)} className="btn-ghost flex-1 sm:flex-none">Cancel</button>
+                </div>
               </div>
             )}
           </div>
@@ -330,7 +386,7 @@ export default function AccountDetailPage({ user }: Props) {
             </div>
             {showFollowUp && (
               <div className="space-y-3">
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="date"
                     value={followUpDate}
@@ -377,7 +433,6 @@ export default function AccountDetailPage({ user }: Props) {
               <p className="text-navy-400 text-sm py-6 text-center">No notes or activities yet. Add your first note above!</p>
             ) : (
               <div className="space-y-4">
-                {/* Combine notes and activities, sort by date */}
                 {[
                   ...notes.map(n => ({ type: 'note' as const, date: n.created_at, data: n })),
                   ...activities.map(a => ({ type: 'activity' as const, date: a.created_at, data: a }))
@@ -428,13 +483,13 @@ export default function AccountDetailPage({ user }: Props) {
   );
 }
 
-function InfoRow({ label, value, isLink }: { label: string; value: string | null | undefined; isLink?: string }) {
+function InfoRow({ label, value, href }: { label: string; value: string | null | undefined; href?: string }) {
   if (!value || value === 'null') return null;
   return (
     <div className="flex justify-between py-1.5 border-b border-navy-50">
       <span className="text-navy-500">{label}</span>
-      {isLink ? (
-        <a href={isLink} className="font-medium text-brand-600 hover:text-brand-700">{value}</a>
+      {href ? (
+        <a href={href} className="font-medium text-brand-600 hover:text-brand-700">{value}</a>
       ) : (
         <span className="font-medium text-navy-900 text-right">{value}</span>
       )}
