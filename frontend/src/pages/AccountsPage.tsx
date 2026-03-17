@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { User, Account, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
 
@@ -7,10 +7,17 @@ interface Props { user: User }
 
 export default function AccountsPage({ user }: Props) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Category toggle: 'lead' or 'customer'
+  const [category, setCategory] = useState<'lead' | 'customer'>(
+    (searchParams.get('category') as 'lead' | 'customer') || 'customer'
+  );
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('search') || '');
   const [statusFilter, setStatusFilter] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -18,13 +25,29 @@ export default function AccountsPage({ user }: Props) {
 
   useEffect(() => {
     loadAccounts();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, category, branchFilter]);
+
+  // Respond to ?search= and ?category= from URL (voice nav, etc.)
+  useEffect(() => {
+    const urlSearch = searchParams.get('search');
+    const urlCategory = searchParams.get('category') as 'lead' | 'customer' | null;
+    if (urlSearch && urlSearch !== search) {
+      setSearch(urlSearch);
+      setPage(1);
+      // Trigger load after setting
+      setTimeout(() => loadAccounts(), 0);
+    }
+    if (urlCategory && urlCategory !== category) {
+      setCategory(urlCategory);
+    }
+  }, [searchParams]);
 
   const loadAccounts = async () => {
     setLoading(true);
     try {
-      const params: Record<string, string> = { page: page.toString(), limit: '25' };
+      const params: Record<string, string> = { page: page.toString(), limit: '25', category };
       if (statusFilter) params.status = statusFilter;
+      if (branchFilter) params.branch = branchFilter;
       if (search) params.search = search;
       const data = await api.get('/accounts', params);
       setAccounts(data.accounts);
@@ -43,20 +66,56 @@ export default function AccountsPage({ user }: Props) {
     loadAccounts();
   };
 
+  const switchCategory = (cat: 'lead' | 'customer') => {
+    setCategory(cat);
+    setPage(1);
+    setSearch('');
+    setStatusFilter('');
+    setBranchFilter('');
+  };
+
+  const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Wasaga Beach'];
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+      {/* ═══ TOP CATEGORY TOGGLE ═══ */}
+      <div className="flex items-center gap-1 p-1 bg-navy-100 rounded-xl mb-4 sm:mb-6">
+        <button
+          onClick={() => switchCategory('customer')}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+            category === 'customer'
+              ? 'bg-green-600 text-white shadow-md'
+              : 'text-navy-500 hover:text-navy-700 hover:bg-white/50'
+          }`}
+        >
+          Active Customers
+        </button>
+        <button
+          onClick={() => switchCategory('lead')}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+            category === 'lead'
+              ? 'bg-brand-600 text-white shadow-md'
+              : 'text-navy-500 hover:text-navy-700 hover:bg-white/50'
+          }`}
+        >
+          Leads
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-navy-900">Accounts</h1>
-          <p className="text-navy-500 text-sm mt-1">{total} total accounts</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-navy-900">
+            {category === 'customer' ? 'Active Customers' : 'Leads'}
+          </h1>
+          <p className="text-navy-500 text-sm mt-1">{total} {category === 'customer' ? 'customers' : 'leads'}</p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="btn-primary">
-          + New Account
+        <button onClick={() => setShowAddModal(true)} className="btn-primary text-sm">
+          + New {category === 'customer' ? 'Customer' : 'Lead'}
         </button>
       </div>
 
       {/* Filters */}
-      <div className="card mb-6">
+      <div className="card mb-4 sm:mb-6">
         <div className="flex flex-wrap gap-3">
           <form onSubmit={handleSearch} className="flex-1 min-w-[200px]">
             <div className="flex gap-2">
@@ -70,16 +129,30 @@ export default function AccountsPage({ user }: Props) {
               <button type="submit" className="btn-primary">Search</button>
             </div>
           </form>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            className="input-field w-auto"
-          >
-            <option value="">All Statuses</option>
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
+          {category === 'lead' && (
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              className="input-field w-auto"
+            >
+              <option value="">All Statuses</option>
+              {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          )}
+          {category === 'customer' && (
+            <select
+              value={branchFilter}
+              onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}
+              className="input-field w-auto"
+            >
+              <option value="">All Branches</option>
+              {BRANCHES.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -90,7 +163,8 @@ export default function AccountsPage({ user }: Props) {
         </div>
       ) : accounts.length === 0 ? (
         <div className="card text-center py-12">
-          <p className="text-navy-500">No accounts found</p>
+          <p className="text-navy-500">No {category === 'customer' ? 'customers' : 'leads'} found</p>
+          {search && <p className="text-navy-400 text-sm mt-1">Try a different search term</p>}
         </div>
       ) : (
         <>
@@ -103,34 +177,43 @@ export default function AccountsPage({ user }: Props) {
                 className="card block hover:shadow-md transition-shadow cursor-pointer"
               >
                 <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-bold text-navy-900">{account.shop_name}</div>
-                    <div className="text-sm text-navy-500 mt-1">{account.city || 'No city'}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-navy-900 truncate">{account.shop_name}</div>
+                    <div className="text-sm text-navy-500 mt-1">
+                      {account.city || 'No city'}
+                      {account.branch && category === 'customer' && (
+                        <span className="text-navy-400"> &middot; {account.branch}</span>
+                      )}
+                    </div>
                     {account.contact_names && (
                       <div className="text-sm text-navy-400 mt-0.5">{account.contact_names}</div>
                     )}
                   </div>
-                  <span className={`badge ${STATUS_COLORS[account.status]}`}>
-                    {STATUS_LABELS[account.status]}
-                  </span>
+                  {category === 'lead' ? (
+                    <span className={`badge ${STATUS_COLORS[account.status]} flex-shrink-0`}>
+                      {STATUS_LABELS[account.status]}
+                    </span>
+                  ) : (
+                    <span className="badge badge-active flex-shrink-0">Customer</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 mt-3 pt-2 border-t border-navy-100">
                   {account.phone && (
                     <>
                       <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
                         className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-lg active:scale-95">
-                        📞 Call
+                        Call
                       </a>
                       <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
                         className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-lg active:scale-95">
-                        💬 Text
+                        Text
                       </a>
                     </>
                   )}
                   {account.email && (
                     <a href={`mailto:${account.email}`} onClick={e => e.stopPropagation()}
                       className="flex items-center gap-1 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded-lg active:scale-95">
-                      📧 Email
+                      Email
                     </a>
                   )}
                   {account.rep_first_name && (
@@ -148,10 +231,16 @@ export default function AccountsPage({ user }: Props) {
                 <tr className="border-b border-navy-100">
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Shop Name</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">City</th>
+                  {category === 'customer' && (
+                    <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Branch</th>
+                  )}
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Contact</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Rep</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Status</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Last Contact</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">
+                    {category === 'lead' ? 'Rep' : 'Phone'}
+                  </th>
+                  {category === 'lead' && (
+                    <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Status</th>
+                  )}
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Actions</th>
                 </tr>
               </thead>
@@ -164,35 +253,38 @@ export default function AccountsPage({ user }: Props) {
                       </Link>
                     </td>
                     <td className="py-3 px-4 text-sm text-navy-600">{account.city || '-'}</td>
+                    {category === 'customer' && (
+                      <td className="py-3 px-4 text-sm text-navy-500">{account.branch || '-'}</td>
+                    )}
                     <td className="py-3 px-4 text-sm text-navy-600">{account.contact_names || '-'}</td>
                     <td className="py-3 px-4 text-sm text-navy-600">
-                      {account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : '-'}
+                      {category === 'lead'
+                        ? (account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : '-')
+                        : (account.phone || '-')
+                      }
                     </td>
-                    <td className="py-3 px-4">
-                      <span className={`badge ${STATUS_COLORS[account.status]}`}>
-                        {STATUS_LABELS[account.status]}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-navy-500">
-                      {account.last_contacted_at
-                        ? new Date(account.last_contacted_at).toLocaleDateString()
-                        : 'Never'}
-                    </td>
+                    {category === 'lead' && (
+                      <td className="py-3 px-4">
+                        <span className={`badge ${STATUS_COLORS[account.status]}`}>
+                          {STATUS_LABELS[account.status]}
+                        </span>
+                      </td>
+                    )}
                     <td className="py-3 px-4">
                       <div className="flex gap-2">
                         {account.phone && (
                           <>
-                            <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`} className="text-green-600 hover:text-green-700" title="Call">
-                              📞
+                            <a href={`tel:${account.phone.replace(/[^\d+]/g, '')}`} className="text-green-600 hover:text-green-700 text-sm" title="Call">
+                              Call
                             </a>
-                            <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`} className="text-blue-600 hover:text-blue-700" title="Text">
-                              💬
+                            <a href={`sms:${account.phone.replace(/[^\d+]/g, '')}`} className="text-blue-600 hover:text-blue-700 text-sm" title="Text">
+                              Text
                             </a>
                           </>
                         )}
                         {account.email && (
-                          <a href={`mailto:${account.email}`} className="text-purple-600 hover:text-purple-700" title="Email">
-                            📧
+                          <a href={`mailto:${account.email}`} className="text-purple-600 hover:text-purple-700 text-sm" title="Email">
+                            Email
                           </a>
                         )}
                       </div>
@@ -231,6 +323,7 @@ export default function AccountsPage({ user }: Props) {
       {/* Add Account Modal */}
       {showAddModal && (
         <AddAccountModal
+          category={category}
           onClose={() => setShowAddModal(false)}
           onCreated={() => { setShowAddModal(false); loadAccounts(); }}
         />
@@ -239,20 +332,22 @@ export default function AccountsPage({ user }: Props) {
   );
 }
 
-function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function AddAccountModal({ category, onClose, onCreated }: { category: 'lead' | 'customer'; onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
-    shop_name: '', address: '', city: '', contact_names: '', phone: '', email: '',
-    status: 'prospect', account_type: 'collision'
+    shop_name: '', address: '', city: '', province: 'ON', postal_code: '', contact_names: '',
+    phone: '', phone2: '', email: '', status: category === 'customer' ? 'active' : 'prospect',
+    account_type: 'collision', account_category: category, branch: ''
   });
   const [error, setError] = useState('');
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const BRANCHES = ['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Wasaga Beach'];
+
   const handleSubmit = async (e: React.FormEvent, skipDuplicate = false) => {
     e.preventDefault();
     setSaving(true);
     setError('');
-
     try {
       await api.post('/accounts', { ...form, skip_duplicate_check: skipDuplicate });
       onCreated();
@@ -260,7 +355,7 @@ function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
       if (err.status === 409 && err.duplicates) {
         setDuplicates(err.duplicates);
       } else {
-        setError(err.error || 'Failed to create account');
+        setError(err.error || 'Failed to create');
       }
     } finally {
       setSaving(false);
@@ -271,7 +366,9 @@ function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-navy-100 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-navy-900">New Account</h2>
+          <h2 className="text-lg font-bold text-navy-900">
+            New {category === 'customer' ? 'Customer' : 'Lead'}
+          </h2>
           <button onClick={onClose} className="text-navy-400 hover:text-navy-600 text-xl">&times;</button>
         </div>
 
@@ -287,9 +384,7 @@ function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
             </div>
             <div className="flex gap-3">
               <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-              <button onClick={(e) => handleSubmit(e, true)} className="btn-primary flex-1">
-                Create Anyway
-              </button>
+              <button onClick={(e) => handleSubmit(e, true)} className="btn-primary flex-1">Create Anyway</button>
             </div>
           </div>
         ) : (
@@ -302,6 +397,7 @@ function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
                 onChange={(e) => setForm(f => ({ ...f, shop_name: e.target.value }))}
                 className="input-field" placeholder="e.g. Acme Collision" />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-navy-700 mb-1">City</label>
@@ -309,29 +405,59 @@ function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
                   onChange={(e) => setForm(f => ({ ...f, city: e.target.value }))}
                   className="input-field" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-navy-700 mb-1">Status</label>
-                <select value={form.status}
-                  onChange={(e) => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="input-field">
-                  {Object.entries(STATUS_LABELS).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
-              </div>
+              {category === 'customer' ? (
+                <div>
+                  <label className="block text-sm font-medium text-navy-700 mb-1">Branch</label>
+                  <select value={form.branch}
+                    onChange={(e) => setForm(f => ({ ...f, branch: e.target.value }))}
+                    className="input-field">
+                    <option value="">Select branch</option>
+                    {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-navy-700 mb-1">Status</label>
+                  <select value={form.status}
+                    onChange={(e) => setForm(f => ({ ...f, status: e.target.value }))}
+                    className="input-field">
+                    {Object.entries(STATUS_LABELS).map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
+
             <div>
               <label className="block text-sm font-medium text-navy-700 mb-1">Address</label>
               <input type="text" value={form.address}
                 onChange={(e) => setForm(f => ({ ...f, address: e.target.value }))}
                 className="input-field" />
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-navy-700 mb-1">Province</label>
+                <input type="text" value={form.province}
+                  onChange={(e) => setForm(f => ({ ...f, province: e.target.value }))}
+                  className="input-field" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-navy-700 mb-1">Postal Code</label>
+                <input type="text" value={form.postal_code}
+                  onChange={(e) => setForm(f => ({ ...f, postal_code: e.target.value }))}
+                  className="input-field" />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-navy-700 mb-1">Contact Name(s)</label>
               <input type="text" value={form.contact_names}
                 onChange={(e) => setForm(f => ({ ...f, contact_names: e.target.value }))}
                 className="input-field" placeholder="e.g. Joe, John" />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-navy-700 mb-1">Phone</label>
@@ -350,7 +476,7 @@ function AddAccountModal({ onClose, onCreated }: { onClose: () => void; onCreate
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
               <button type="submit" disabled={saving} className="btn-primary flex-1">
-                {saving ? 'Creating...' : 'Create Account'}
+                {saving ? 'Creating...' : `Create ${category === 'customer' ? 'Customer' : 'Lead'}`}
               </button>
             </div>
           </form>

@@ -58,6 +58,10 @@ export default function AdminPage({ user }: Props) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [dataMessage, setDataMessage] = useState('');
 
+  // Customer seed state
+  const [seedRunning, setSeedRunning] = useState(false);
+  const [seedResult, setSeedResult] = useState<string>('');
+
   // Google Drive auto-import state
   interface GDriveStatus { configured: boolean; lastRun: any; cronSchedule: string; folderId: string | null }
   interface ImportLogEntry { id: number; status: string; files_processed: number; records_imported: number; unmatched_count: number; details: any; error_message: string | null; triggered_by: string; created_at: string }
@@ -826,6 +830,36 @@ export default function AdminPage({ user }: Props) {
               </div>
             </div>
           )}
+
+          <div className="card mb-6">
+            <h2 className="font-bold text-navy-900 mb-2">Customer Database Seed</h2>
+            <p className="text-sm text-navy-500 mb-4">
+              Import all Active Customers from the AccountEdge customer exports (Hamilton, Markham, Oakville, Ottawa, St. Catharines, Wasaga Beach). This will create customer records and link them to existing sales data.
+            </p>
+            {seedResult && (
+              <div className={`text-sm px-4 py-3 rounded-lg mb-4 border ${seedResult.includes('Error') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                {seedResult}
+              </div>
+            )}
+            <button
+              onClick={async () => {
+                setSeedRunning(true);
+                setSeedResult('');
+                try {
+                  const data = await api.post('/admin/seed-customers');
+                  setSeedResult(`Imported ${data.imported} customers. Linked ${data.linked_sales} sales records. ${data.skipped > 0 ? `${data.skipped} errors.` : ''}`);
+                } catch (err: any) {
+                  setSeedResult(`Error: ${err.error || err.message || 'Import failed'}`);
+                } finally {
+                  setSeedRunning(false);
+                }
+              }}
+              disabled={seedRunning}
+              className="px-6 py-3 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              {seedRunning ? 'Importing Customers...' : 'Import Active Customers'}
+            </button>
+          </div>
 
           <div className="card">
             <h2 className="font-bold text-navy-900 mb-2">Sales Data Management</h2>

@@ -135,12 +135,17 @@ export default function AccountDetailPage({ user }: Props) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6 gap-3">
         <div>
-          <button onClick={() => navigate('/accounts')} className="text-sm text-navy-400 hover:text-navy-600 mb-2 flex items-center gap-1">
-            &larr; Back to Accounts
+          <button onClick={() => navigate(`/accounts?category=${account.account_category || 'lead'}`)} className="text-sm text-navy-400 hover:text-navy-600 mb-2 flex items-center gap-1">
+            &larr; Back to {account.account_category === 'customer' ? 'Customers' : 'Leads'}
           </button>
           <h1 className="text-xl sm:text-2xl font-bold text-navy-900">{account.shop_name}</h1>
           <div className="flex items-center gap-3 mt-2 flex-wrap">
-            <span className={`badge ${STATUS_COLORS[account.status]}`}>{STATUS_LABELS[account.status]}</span>
+            {account.account_category === 'customer' ? (
+              <span className="badge badge-active">Active Customer</span>
+            ) : (
+              <span className={`badge ${STATUS_COLORS[account.status]}`}>{STATUS_LABELS[account.status]}</span>
+            )}
+            {account.branch && <span className="text-sm text-brand-600 font-medium">{account.branch}</span>}
             {account.city && <span className="text-sm text-navy-500">{account.city}{account.province ? `, ${account.province}` : ''}</span>}
             {account.contact_names && <span className="text-sm text-navy-400">{account.contact_names}</span>}
           </div>

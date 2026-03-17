@@ -181,3 +181,28 @@ CREATE TABLE IF NOT EXISTS gdrive_import_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_gdrive_import_log_created ON gdrive_import_log(created_at DESC);
+
+-- Account category: 'lead' for prospects, 'customer' for active buying customers
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN account_category TEXT DEFAULT 'lead' CHECK(account_category IN ('lead', 'customer'));
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN branch TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN postal_code TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN phone2 TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN accountedge_card_id TEXT;
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_accounts_category ON accounts(account_category);
+CREATE INDEX IF NOT EXISTS idx_accounts_branch ON accounts(branch);

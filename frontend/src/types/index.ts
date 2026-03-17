@@ -13,10 +13,14 @@ export interface Account {
   city: string | null;
   area: string | null;
   province: string | null;
+  postal_code: string | null;
   contact_names: string | null;
   phone: string | null;
+  phone2: string | null;
   email: string | null;
   account_type: string;
+  account_category: 'lead' | 'customer';
+  branch: string | null;
   assigned_rep_id: number | null;
   rep_first_name?: string;
   rep_last_name?: string;

@@ -250,9 +250,11 @@ async function startServer() {
   // ─── ACCOUNTS ROUTES ───
   app.get('/api/accounts', authenticate, async (req, res) => {
     try {
-      const { status, assigned_rep_id, city, search, page = '1', limit = '50' } = req.query;
+      const { status, assigned_rep_id, city, search, category, branch, page = '1', limit = '50' } = req.query;
       const pg = parseInt(page); const lim = parseInt(limit); const off = (pg-1)*lim;
       let where = ['a.deleted_at IS NULL']; let params = []; let idx = 1;
+      if (category) { where.push(`a.account_category = $${idx++}`); params.push(category); }
+      if (branch) { where.push(`a.branch ILIKE $${idx++}`); params.push(`%${branch}%`); }
       if (status) { where.push(`a.status = $${idx++}`); params.push(status); }
       if (assigned_rep_id) { where.push(`a.assigned_rep_id = $${idx++}`); params.push(assigned_rep_id); }
       if (city) { where.push(`a.city ILIKE $${idx++}`); params.push(`%${city}%`); }
@@ -304,8 +306,8 @@ async function startServer() {
           id: d.account.id, shop_name: d.account.shop_name, city: d.account.city, status: d.account.status, score: d.score }))});
       }
       const { lastId } = await execute(
-        `INSERT INTO accounts (shop_name,address,city,area,province,contact_names,phone,email,account_type,assigned_rep_id,status,suppliers,paint_line,allied_products,sundries,has_contract,mpo,num_techs,sq_footage,annual_revenue,former_sherwin_client,follow_up_date,tags) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
-        [b.shop_name,b.address||null,b.city||null,b.area||null,b.province||'ON',b.contact_names||null,b.phone||null,b.email||null,b.account_type||'collision',b.assigned_rep_id||null,b.status||'prospect',b.suppliers||null,b.paint_line||null,b.allied_products||null,b.sundries||null,b.has_contract?true:false,b.mpo||null,b.num_techs||null,b.sq_footage||null,b.annual_revenue||null,b.former_sherwin_client?true:false,b.follow_up_date||null,JSON.stringify(b.tags||[])]);
+        `INSERT INTO accounts (shop_name,address,city,area,province,contact_names,phone,email,account_type,assigned_rep_id,status,suppliers,paint_line,allied_products,sundries,has_contract,mpo,num_techs,sq_footage,annual_revenue,former_sherwin_client,follow_up_date,tags,account_category,branch,postal_code,phone2) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+        [b.shop_name,b.address||null,b.city||null,b.area||null,b.province||'ON',b.contact_names||null,b.phone||null,b.email||null,b.account_type||'collision',b.assigned_rep_id||null,b.status||'prospect',b.suppliers||null,b.paint_line||null,b.allied_products||null,b.sundries||null,b.has_contract?true:false,b.mpo||null,b.num_techs||null,b.sq_footage||null,b.annual_revenue||null,b.former_sherwin_client?true:false,b.follow_up_date||null,JSON.stringify(b.tags||[]),b.account_category||'lead',b.branch||null,b.postal_code||null,b.phone2||null]);
       await logAudit(req, 'account', lastId, 'create', { shop_name: b.shop_name });
       res.status(201).json({ account: await queryOne('SELECT * FROM accounts WHERE id=$1', [lastId]) });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -315,7 +317,7 @@ async function startServer() {
     try {
       const existing = await queryOne('SELECT * FROM accounts WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags'];
+      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2'];
       const updates = ['updated_at = NOW()']; const params = []; const changes = {};
       let idx = 1;
       for (const f of fields) {
@@ -903,6 +905,72 @@ async function startServer() {
   } else {
     console.log('  Google Drive auto-import: not configured (set GDRIVE_FOLDER_ID + GOOGLE_SERVICE_ACCOUNT_JSON)');
   }
+
+  // ─── CUSTOMER SEED (admin-only bulk import from AccountEdge CSVs) ───
+  app.post('/api/admin/seed-customers', authenticate, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const customers = require('./src/customer-seed.json');
+      let imported = 0, skipped = 0, errors = [];
+
+      for (const c of customers) {
+        try {
+          // Check if customer already exists (by name, case-insensitive)
+          const existing = await queryOne(
+            'SELECT id FROM accounts WHERE LOWER(shop_name) = LOWER($1) AND deleted_at IS NULL',
+            [c.shop_name]
+          );
+          if (existing) {
+            // Update existing record to customer category and fill in any missing data
+            const updates = [];
+            const params = [];
+            let idx = 1;
+            updates.push(`account_category = 'customer'`);
+            if (c.branch) { updates.push(`branch = $${idx++}`); params.push(c.branch); }
+            if (c.address) { updates.push(`address = COALESCE(NULLIF(address,''), $${idx++})`); params.push(c.address); }
+            if (c.city) { updates.push(`city = COALESCE(NULLIF(city,''), $${idx++})`); params.push(c.city); }
+            if (c.province) { updates.push(`province = COALESCE(NULLIF(province,''), $${idx++})`); params.push(c.province); }
+            if (c.postal_code) { updates.push(`postal_code = COALESCE(postal_code, $${idx++})`); params.push(c.postal_code); }
+            if (c.phone) { updates.push(`phone = COALESCE(NULLIF(phone,''), $${idx++})`); params.push(c.phone); }
+            if (c.phone2) { updates.push(`phone2 = COALESCE(phone2, $${idx++})`); params.push(c.phone2); }
+            if (c.email) { updates.push(`email = COALESCE(NULLIF(email,''), $${idx++})`); params.push(c.email); }
+            if (c.contact_names) { updates.push(`contact_names = COALESCE(NULLIF(contact_names,''), $${idx++})`); params.push(c.contact_names); }
+            params.push(existing.id);
+            await execute(`UPDATE accounts SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx}`, params);
+            imported++;
+          } else {
+            // Insert new customer
+            await execute(
+              `INSERT INTO accounts (shop_name, address, city, province, postal_code, phone, phone2, email, contact_names, branch, account_category, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'customer','active')`,
+              [c.shop_name, c.address, c.city, c.province, c.postal_code, c.phone, c.phone2, c.email, c.contact_names, c.branch]
+            );
+            imported++;
+          }
+        } catch (err) {
+          errors.push({ shop_name: c.shop_name, error: err.message });
+          skipped++;
+        }
+      }
+
+      // Also link sales_data to accounts where customer_name matches
+      const unlinked = await queryAll(
+        `SELECT DISTINCT sd.customer_name FROM sales_data sd WHERE sd.account_id IS NULL AND sd.customer_name IS NOT NULL`
+      );
+      let linked = 0;
+      for (const row of unlinked) {
+        const match = await queryOne(
+          'SELECT id FROM accounts WHERE LOWER(shop_name) = LOWER($1) AND deleted_at IS NULL',
+          [row.customer_name]
+        );
+        if (match) {
+          await execute('UPDATE sales_data SET account_id = $1 WHERE LOWER(customer_name) = LOWER($2) AND account_id IS NULL', [match.id, row.customer_name]);
+          linked++;
+        }
+      }
+
+      res.json({ success: true, total: customers.length, imported, skipped, linked_sales: linked, errors: errors.slice(0, 20) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
   // ─── HEALTH ───
   app.get('/api/health', async (req, res) => {
