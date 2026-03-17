@@ -56,6 +56,14 @@ export default function AdminPage({ user }: Props) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [dataMessage, setDataMessage] = useState('');
 
+  // Google Drive auto-import state
+  interface GDriveStatus { configured: boolean; lastRun: any; cronSchedule: string; folderId: string | null }
+  interface ImportLogEntry { id: number; status: string; files_processed: number; records_imported: number; unmatched_count: number; details: any; error_message: string | null; triggered_by: string; created_at: string }
+  const [gdriveStatus, setGdriveStatus] = useState<GDriveStatus | null>(null);
+  const [importHistory, setImportHistory] = useState<ImportLogEntry[]>([]);
+  const [importRunning, setImportRunning] = useState(false);
+  const [importResult, setImportResult] = useState<string>('');
+
   useEffect(() => { loadUsers(); }, []);
 
   const loadUsers = async () => {
@@ -208,6 +216,42 @@ export default function AdminPage({ user }: Props) {
     }
   };
 
+  const loadGDriveStatus = async () => {
+    try {
+      const data = await api.get('/gdrive-import/status');
+      setGdriveStatus(data);
+    } catch (err) { console.error(err); }
+  };
+
+  const loadImportHistory = async () => {
+    try {
+      const data = await api.get('/gdrive-import/history');
+      setImportHistory(data.history || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const runImportNow = async () => {
+    setImportRunning(true);
+    setImportResult('');
+    try {
+      const data = await api.post('/gdrive-import/run', {});
+      if (data.success) {
+        setImportResult(`Imported ${data.totalImported} records from ${data.filesProcessed} file(s)${data.totalUnmatched ? ` (${data.totalUnmatched} unmatched)` : ''}`);
+        showSuccess('Google Drive import completed successfully');
+      } else {
+        setImportResult(`Import failed: ${data.error}`);
+        showError(data.error || 'Import failed');
+      }
+      loadGDriveStatus();
+      loadImportHistory();
+    } catch (err: any) {
+      showError(err.error || 'Failed to run import');
+      setImportResult(`Error: ${err.error || err.message}`);
+    } finally {
+      setImportRunning(false);
+    }
+  };
+
   const isAdmin = user.role === 'admin';
 
   return (
@@ -242,6 +286,7 @@ export default function AdminPage({ user }: Props) {
               onClick={() => {
                 setActiveTab(tab.key as any);
                 if (tab.key === 'notifications') loadNotificationSettings();
+                if (tab.key === 'data') { loadGDriveStatus(); loadImportHistory(); }
               }}
               className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === tab.key ? 'bg-white text-navy-900 shadow-sm' : 'text-navy-500 hover:text-navy-700'
@@ -654,6 +699,118 @@ export default function AdminPage({ user }: Props) {
       {/* ═══ DATA TAB (admin only) ═══ */}
       {activeTab === 'data' && isAdmin && (
         <div className="space-y-6">
+
+          {/* Google Drive Auto-Import */}
+          <div className="card">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
+              <div>
+                <h2 className="font-bold text-navy-900">Google Drive Auto-Import</h2>
+                <p className="text-xs text-navy-500 mt-0.5">
+                  Automatically imports AccountEdge CSV files from your shared Google Drive folder.
+                </p>
+              </div>
+              {gdriveStatus?.configured && (
+                <button
+                  onClick={runImportNow}
+                  disabled={importRunning}
+                  className="btn-primary text-sm whitespace-nowrap"
+                >
+                  {importRunning ? 'Importing...' : 'Run Import Now'}
+                </button>
+              )}
+            </div>
+
+            {importResult && (
+              <div className={`text-sm px-4 py-3 rounded-lg mb-4 border ${
+                importResult.startsWith('Error') || importResult.startsWith('Import failed')
+                  ? 'bg-red-50 text-red-700 border-red-200'
+                  : 'bg-green-50 text-green-700 border-green-200'
+              }`}>
+                {importResult}
+              </div>
+            )}
+
+            {gdriveStatus === null ? (
+              <div className="text-sm text-navy-400">Loading status...</div>
+            ) : !gdriveStatus.configured ? (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
+                <p className="text-amber-800 font-medium mb-2">Not configured yet</p>
+                <p className="text-sm text-amber-700 mb-3">
+                  To enable automatic imports, you need to set up a Google Cloud service account and add these environment variables to Render:
+                </p>
+                <div className="space-y-1 text-xs font-mono bg-amber-100 rounded-lg p-3 text-amber-900">
+                  <div>GOOGLE_SERVICE_ACCOUNT_JSON={"{"} ... {"}"}</div>
+                  <div>GDRIVE_FOLDER_ID=your_folder_id_here</div>
+                  <div>GDRIVE_IMPORT_CRON=0 10 * * 1-5 <span className="text-amber-600 font-sans">(optional, default: 10AM weekdays)</span></div>
+                </div>
+                <p className="text-xs text-amber-600 mt-3">See the setup guide in the project README for step-by-step instructions.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-green-50 border border-green-200">
+                    <div className="text-xs text-green-600 font-medium">Status</div>
+                    <div className="text-sm font-bold text-green-800 mt-0.5">Connected</div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-navy-50 border border-navy-200">
+                    <div className="text-xs text-navy-500 font-medium">Schedule</div>
+                    <div className="text-sm font-bold text-navy-800 mt-0.5">{gdriveStatus.cronSchedule || '10AM weekdays'}</div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-navy-50 border border-navy-200">
+                    <div className="text-xs text-navy-500 font-medium">Last Run</div>
+                    <div className="text-sm font-bold text-navy-800 mt-0.5">
+                      {gdriveStatus.lastRun
+                        ? new Date(gdriveStatus.lastRun.created_at).toLocaleString()
+                        : 'Never'}
+                    </div>
+                  </div>
+                </div>
+
+                {gdriveStatus.lastRun && (
+                  <div className="text-xs text-navy-500">
+                    Last result: {gdriveStatus.lastRun.status === 'success'
+                      ? `${gdriveStatus.lastRun.records_imported} records from ${gdriveStatus.lastRun.files_processed} file(s)`
+                      : `Error: ${gdriveStatus.lastRun.error_message}`}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Import History */}
+          {importHistory.length > 0 && (
+            <div className="card">
+              <h2 className="font-bold text-navy-900 mb-3">Import History</h2>
+              <div className="space-y-2">
+                {importHistory.slice(0, 10).map(entry => (
+                  <div key={entry.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-2 border-b border-navy-50 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block w-2 h-2 rounded-full ${
+                        entry.status === 'success' ? 'bg-green-500' : entry.status === 'running' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'
+                      }`} />
+                      <span className="text-sm text-navy-800">
+                        {entry.status === 'success'
+                          ? `${entry.records_imported} records from ${entry.files_processed} file(s)`
+                          : entry.status === 'running'
+                            ? 'Running...'
+                            : entry.error_message || 'Failed'}
+                      </span>
+                      {entry.unmatched_count > 0 && (
+                        <span className="text-xs text-amber-600">({entry.unmatched_count} unmatched)</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-navy-400">
+                      <span className={`px-1.5 py-0.5 rounded ${entry.triggered_by === 'manual' ? 'bg-brand-50 text-brand-600' : 'bg-navy-50 text-navy-500'}`}>
+                        {entry.triggered_by || 'cron'}
+                      </span>
+                      <span>{new Date(entry.created_at).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <h2 className="font-bold text-navy-900 mb-2">Sales Data Management</h2>
             <p className="text-sm text-navy-500 mb-6">

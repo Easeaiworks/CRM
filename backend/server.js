@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
 const { initDatabase, queryAll, queryOne, execute } = require('./src/db/init');
+const { runGDriveImport } = require('./src/gdrive-import');
 
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'refinish-ai-dev-secret-change-in-production';
@@ -813,6 +814,67 @@ async function startServer() {
       console.error('Digest cron error:', e.message);
     }
   });
+
+  // ─── GOOGLE DRIVE AUTO-IMPORT ───
+
+  // Manual trigger — admin only
+  app.post('/api/gdrive-import/run', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+
+      // Check if already running
+      const running = await queryOne("SELECT id FROM gdrive_import_log WHERE status = 'running' AND created_at > NOW() - INTERVAL '10 minutes'");
+      if (running) return res.status(409).json({ error: 'An import is already running' });
+
+      // Mark as running
+      await execute("INSERT INTO gdrive_import_log (status, triggered_by) VALUES ('running', 'manual')");
+
+      const result = await runGDriveImport(queryAll, queryOne, execute);
+      await logAudit(req, 'sale', null, 'import', { action: 'gdrive_auto_import', ...result });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Import history — admin/manager
+  app.get('/api/gdrive-import/history', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+        return res.status(403).json({ error: 'Admin or manager access required' });
+      }
+      const history = await queryAll('SELECT * FROM gdrive_import_log ORDER BY created_at DESC LIMIT 30');
+      res.json({ history });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Status check — is Google Drive configured?
+  app.get('/api/gdrive-import/status', authenticate, async (req, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      const configured = !!(process.env.GDRIVE_FOLDER_ID && process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const lastRun = await queryOne("SELECT * FROM gdrive_import_log WHERE status != 'running' ORDER BY created_at DESC LIMIT 1");
+      const cronSchedule = process.env.GDRIVE_IMPORT_CRON || '0 10 * * 1-5';
+      res.json({ configured, lastRun, cronSchedule, folderId: process.env.GDRIVE_FOLDER_ID || null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── CRON JOB FOR GOOGLE DRIVE IMPORT ───
+  const gdriveCron = process.env.GDRIVE_IMPORT_CRON || '0 10 * * 1-5';
+  if (process.env.GDRIVE_FOLDER_ID && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    cron.schedule(gdriveCron, async () => {
+      console.log('[GDrive Cron] Running scheduled import...');
+      try {
+        const result = await runGDriveImport(queryAll, queryOne, execute);
+        console.log(`[GDrive Cron] Result: ${result.totalImported || 0} records from ${result.filesProcessed || 0} files`);
+      } catch (e) {
+        console.error('[GDrive Cron] Error:', e.message);
+      }
+    });
+    console.log(`  Google Drive auto-import: scheduled (${gdriveCron})`);
+  } else {
+    console.log('  Google Drive auto-import: not configured (set GDRIVE_FOLDER_ID + GOOGLE_SERVICE_ACCOUNT_JSON)');
+  }
 
   // ─── HEALTH ───
   app.get('/api/health', async (req, res) => {

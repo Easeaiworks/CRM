@@ -166,3 +166,18 @@ DO $$ BEGIN
   ALTER TABLE users ADD COLUMN daily_digest_time TEXT DEFAULT '07:30';
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
+
+-- Google Drive auto-import log
+CREATE TABLE IF NOT EXISTS gdrive_import_log (
+  id SERIAL PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success', 'error', 'running')),
+  files_processed INTEGER DEFAULT 0,
+  records_imported INTEGER DEFAULT 0,
+  unmatched_count INTEGER DEFAULT 0,
+  details JSONB DEFAULT '[]',
+  error_message TEXT,
+  triggered_by TEXT DEFAULT 'cron',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gdrive_import_log_created ON gdrive_import_log(created_at DESC);
