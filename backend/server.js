@@ -425,13 +425,33 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ─── EDIT NOTE ───
+  app.put('/api/notes/:id', authenticate, async (req, res) => {
+    try {
+      const note = await queryOne('SELECT * FROM notes WHERE id=$1', [req.params.id]);
+      if (!note) return res.status(404).json({ error: 'Note not found' });
+      // Reps can only edit their own notes; managers/admins can edit any
+      if (req.user.role === 'rep' && note.created_by_id !== req.user.userId) {
+        return res.status(403).json({ error: 'You can only edit your own notes' });
+      }
+      if (!req.body.content?.trim()) return res.status(400).json({ error: 'Content required' });
+      await execute('UPDATE notes SET content=$1, updated_at=NOW() WHERE id=$2', [req.body.content.trim(), req.params.id]);
+      await logAudit(req, 'note', note.id, 'update', { account_id: note.account_id });
+      res.json({ note: await queryOne('SELECT n.*, u.first_name, u.last_name FROM notes n JOIN users u ON n.created_by_id=u.id WHERE n.id=$1', [req.params.id]) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ─── ACTIVITIES ROUTES ───
+  const VALID_ACTIVITY_TYPES = ['call','email','text','meeting','visit','sales_call','drop_in','contract_presentation','proposal','product_demo','vendor_partner_visit','other'];
+
   app.post('/api/accounts/:id/activities', authenticate, async (req, res) => {
     try {
+      const actType = req.body.activity_type || 'other';
+      if (!VALID_ACTIVITY_TYPES.includes(actType)) return res.status(400).json({ error: `Invalid activity type. Must be one of: ${VALID_ACTIVITY_TYPES.join(', ')}` });
       const { lastId } = await execute('INSERT INTO activities (account_id, rep_id, activity_type, description, completed_date) VALUES ($1,$2,$3,$4,NOW())',
-        [req.params.id, req.user.userId, req.body.activity_type, req.body.description || null]);
+        [req.params.id, req.user.userId, actType, req.body.description || null]);
       await execute('UPDATE accounts SET last_contacted_at=NOW(), updated_at=NOW() WHERE id=$1', [req.params.id]);
-      await logAudit(req, 'activity', lastId, 'create', { account_id: req.params.id });
+      await logAudit(req, 'activity', lastId, 'create', { account_id: req.params.id, activity_type: actType });
       res.status(201).json({ activity: await queryOne('SELECT act.*, u.first_name, u.last_name FROM activities act JOIN users u ON act.rep_id=u.id WHERE act.id=$1', [lastId]) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

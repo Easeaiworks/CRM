@@ -27,6 +27,11 @@ export default function AccountDetailPage({ user }: Props) {
   // Auto-log toast
   const [autoLogToast, setAutoLogToast] = useState('');
 
+  // Edit note
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editNoteContent, setEditNoteContent] = useState('');
+  const [savingEditNote, setSavingEditNote] = useState(false);
+
   // Follow-up scheduling
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState('');
@@ -76,6 +81,37 @@ export default function AccountDetailPage({ user }: Props) {
     } finally {
       setSavingNote(false);
     }
+  };
+
+  const updateNote = async () => {
+    if (!editNoteContent.trim() || !editingNoteId) return;
+    setSavingEditNote(true);
+    try {
+      await api.put(`/notes/${editingNoteId}`, { content: editNoteContent.trim() });
+      setEditingNoteId(null);
+      setEditNoteContent('');
+      loadAccount();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingEditNote(false);
+    }
+  };
+
+  // Activity type config: label + icon + color
+  const ACTIVITY_TAGS: Record<string, { label: string; icon: string; bg: string }> = {
+    call:                     { label: 'Call',                    icon: '📞', bg: 'bg-green-100' },
+    email:                    { label: 'Email',                   icon: '📧', bg: 'bg-purple-100' },
+    text:                     { label: 'Text',                    icon: '💬', bg: 'bg-blue-100' },
+    meeting:                  { label: 'Meeting',                 icon: '🤝', bg: 'bg-amber-100' },
+    visit:                    { label: 'Visit',                   icon: '🚗', bg: 'bg-teal-100' },
+    sales_call:               { label: 'Sales Call',              icon: '💼', bg: 'bg-indigo-100' },
+    drop_in:                  { label: 'Drop In',                 icon: '🚪', bg: 'bg-orange-100' },
+    contract_presentation:    { label: 'Contract Presentation',   icon: '📑', bg: 'bg-red-100' },
+    proposal:                 { label: 'Proposal',                icon: '📄', bg: 'bg-cyan-100' },
+    product_demo:             { label: 'Product Demo',            icon: '🎯', bg: 'bg-pink-100' },
+    vendor_partner_visit:     { label: 'Vendor/Partner Visit',    icon: '🏢', bg: 'bg-lime-100' },
+    other:                    { label: 'Other',                   icon: '📋', bg: 'bg-navy-100' },
   };
 
   // Auto-log: fires native action AND logs the activity automatically
@@ -330,13 +366,12 @@ export default function AccountDetailPage({ user }: Props) {
                 className="input-field w-auto text-sm"
               >
                 <option value="none">Note only</option>
-                <option value="call">📞 Call</option>
-                <option value="email">📧 Email</option>
-                <option value="visit">🚗 Visit</option>
-                <option value="meeting">📋 Meeting</option>
+                {Object.entries(ACTIVITY_TAGS).map(([key, { label, icon }]) => (
+                  <option key={key} value={key}>{icon} {label}</option>
+                ))}
               </select>
               <span className="text-xs text-navy-400 hidden sm:inline">
-                {noteActivityType !== 'none' ? 'Will also log this as an activity' : 'Optional: tag as activity type'}
+                {noteActivityType !== 'none' ? `Will also log as: ${ACTIVITY_TAGS[noteActivityType]?.label}` : 'Optional: tag as activity type'}
               </span>
               <button onClick={saveNote} disabled={savingNote || !newNote.trim()} className="btn-primary ml-auto">
                 {savingNote ? '...' : 'Save'}
@@ -406,9 +441,9 @@ export default function AccountDetailPage({ user }: Props) {
             )}
           </div>
 
-          {/* Notes Timeline */}
+          {/* Notes & Activity Timeline */}
           <div className="card">
-            <h3 className="font-bold text-navy-900 mb-4">Notes & History</h3>
+            <h3 className="font-bold text-navy-900 mb-4">Notes & Activity Timeline</h3>
             {notes.length === 0 && activities.length === 0 ? (
               <p className="text-navy-400 text-sm py-6 text-center">No notes or activities yet. Add your first note above!</p>
             ) : (
@@ -418,42 +453,83 @@ export default function AccountDetailPage({ user }: Props) {
                   ...activities.map(a => ({ type: 'activity' as const, date: a.created_at, data: a }))
                 ]
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((item, idx) => (
-                    <div key={`${item.type}-${idx}`} className="flex gap-3 pb-4 border-b border-navy-50 last:border-0">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${
-                        item.type === 'note' ? 'bg-blue-100' : 'bg-green-100'
-                      }`}>
-                        {item.type === 'note' ? '📝' :
-                          (item.data as Activity).activity_type === 'call' ? '📞' :
-                          (item.data as Activity).activity_type === 'email' ? '📧' :
-                          (item.data as Activity).activity_type === 'visit' ? '🚗' : '📋'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start">
-                          <span className="text-xs font-medium text-navy-900">
-                            {item.type === 'note'
-                              ? `${(item.data as Note).first_name} ${(item.data as Note).last_name}`
-                              : `${(item.data as Activity).first_name} ${(item.data as Activity).last_name} — ${(item.data as Activity).activity_type}`
-                            }
-                          </span>
-                          <span className="text-xs text-navy-400 flex-shrink-0 ml-2">
-                            {new Date(item.date).toLocaleDateString()} {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                  .map((item, idx) => {
+                    const isNote = item.type === 'note';
+                    const note = isNote ? (item.data as Note) : null;
+                    const activity = !isNote ? (item.data as Activity) : null;
+                    const tagConfig = activity ? ACTIVITY_TAGS[activity.activity_type] || ACTIVITY_TAGS.other : null;
+                    const canEdit = isNote && (note!.created_by_id === user.id || user.role !== 'rep');
+                    const isEditing = isNote && editingNoteId === note!.id;
+
+                    return (
+                      <div key={`${item.type}-${isNote ? note!.id : activity!.id}`} className="flex gap-3 pb-4 border-b border-navy-50 last:border-0">
+                        {/* Icon */}
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${
+                          isNote ? 'bg-blue-100' : (tagConfig?.bg || 'bg-green-100')
+                        }`}>
+                          {isNote ? '📝' : tagConfig?.icon || '📋'}
                         </div>
-                        <p className="text-sm text-navy-700 mt-1 whitespace-pre-wrap">
-                          {item.type === 'note'
-                            ? (item.data as Note).content
-                            : (item.data as Activity).description || `Logged a ${(item.data as Activity).activity_type}`
-                          }
-                        </p>
-                        {item.type === 'note' && (item.data as Note).is_voice_transcribed ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-navy-400 mt-1">
-                            🎤 Voice transcribed
-                          </span>
-                        ) : null}
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-medium text-navy-900">
+                                {isNote ? `${note!.first_name} ${note!.last_name}` : `${activity!.first_name} ${activity!.last_name}`}
+                              </span>
+                              {!isNote && tagConfig && (
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tagConfig.bg} text-navy-700`}>
+                                  {tagConfig.icon} {tagConfig.label}
+                                </span>
+                              )}
+                              {isNote && note!.is_voice_transcribed ? (
+                                <span className="text-[10px] text-navy-400 bg-navy-50 px-1.5 py-0.5 rounded-full">🎤 Voice</span>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {canEdit && !isEditing && (
+                                <button
+                                  onClick={() => { setEditingNoteId(note!.id); setEditNoteContent(note!.content); }}
+                                  className="text-[10px] text-navy-400 hover:text-navy-600 px-1.5 py-0.5 rounded hover:bg-navy-50"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                              <span className="text-xs text-navy-400">
+                                {new Date(item.date).toLocaleDateString()} {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Note content — editable or read-only */}
+                          {isEditing ? (
+                            <div className="mt-2 space-y-2">
+                              <textarea
+                                value={editNoteContent}
+                                onChange={e => setEditNoteContent(e.target.value)}
+                                className="input-field w-full min-h-[60px] resize-none text-sm"
+                                rows={3}
+                                autoFocus
+                              />
+                              <div className="flex gap-2">
+                                <button onClick={updateNote} disabled={savingEditNote || !editNoteContent.trim()} className="btn-primary text-xs px-3 py-1">
+                                  {savingEditNote ? 'Saving...' : 'Save'}
+                                </button>
+                                <button onClick={() => { setEditingNoteId(null); setEditNoteContent(''); }} className="btn-ghost text-xs px-3 py-1">
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-navy-700 mt-1 whitespace-pre-wrap">
+                              {isNote
+                                ? note!.content
+                                : activity!.description || `Logged a ${tagConfig?.label || activity!.activity_type}`
+                              }
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </div>

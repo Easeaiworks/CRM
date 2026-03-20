@@ -68,6 +68,7 @@ export interface Note {
   content: string;
   is_voice_transcribed: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Activity {
