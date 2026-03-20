@@ -62,6 +62,14 @@ export default function AdminPage({ user }: Props) {
   const [seedRunning, setSeedRunning] = useState(false);
   const [seedResult, setSeedResult] = useState<string>('');
 
+  // Auto-assign reps state
+  const [autoAssignRunning, setAutoAssignRunning] = useState(false);
+  const [autoAssignResult, setAutoAssignResult] = useState<any>(null);
+
+  // Create salespeople state
+  const [createSpRunning, setCreateSpRunning] = useState(false);
+  const [createSpResult, setCreateSpResult] = useState<any>(null);
+
   // Google Drive auto-import state
   interface GDriveStatus { configured: boolean; lastRun: any; cronSchedule: string; folderId: string | null }
   interface ImportLogEntry { id: number; status: string; files_processed: number; records_imported: number; unmatched_count: number; details: any; error_message: string | null; triggered_by: string; created_at: string }
@@ -261,6 +269,7 @@ export default function AdminPage({ user }: Props) {
   };
 
   const isAdmin = user.role === 'admin';
+  const isManagerOrAdmin = user.role === 'admin' || user.role === 'manager';
 
   return (
     <div>
@@ -314,10 +323,10 @@ export default function AdminPage({ user }: Props) {
             <div>
               <h2 className="font-bold text-navy-900">Team Members</h2>
               <p className="text-xs text-navy-400 mt-0.5">
-                {isAdmin ? 'Manage users, reset passwords, and control access.' : 'View your team members.'}
+                {isManagerOrAdmin ? 'Manage users, reset passwords, and control access.' : 'View your team members.'}
               </p>
             </div>
-            {isAdmin && (
+            {isManagerOrAdmin && (
               <button onClick={() => setShowAddUser(true)} className="btn-primary text-sm">+ Add User</button>
             )}
           </div>
@@ -332,7 +341,7 @@ export default function AdminPage({ user }: Props) {
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Role</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Status</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase hidden lg:table-cell">Last Login</th>
-                  {isAdmin && (
+                  {isManagerOrAdmin && (
                     <th className="text-right py-3 px-4 text-xs font-medium text-navy-500 uppercase">Actions</th>
                   )}
                 </tr>
@@ -371,36 +380,42 @@ export default function AdminPage({ user }: Props) {
                     <td className="py-3 px-4 text-sm text-navy-500 hidden lg:table-cell">
                       {u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Never'}
                     </td>
-                    {isAdmin && (
+                    {isManagerOrAdmin && (
                       <td className="py-3 px-4 text-right">
                         {u.id !== user.id && (
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => setEditingUser({ ...u })}
-                              className="text-xs text-navy-500 hover:text-navy-700 px-2 py-1 rounded hover:bg-navy-50"
-                              title="Edit user details"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => { setResetPasswordUser(u); setNewPassword(''); }}
-                              className="text-xs text-brand-600 hover:text-brand-800 px-2 py-1 rounded hover:bg-brand-50"
-                              title="Reset password"
-                            >
-                              Reset PW
-                            </button>
-                            <button
-                              onClick={() => handleToggleActive(u)}
-                              disabled={actionLoading === u.id}
-                              className={`text-xs px-2 py-1 rounded ${
-                                u.is_active
-                                  ? 'text-red-600 hover:text-red-800 hover:bg-red-50'
-                                  : 'text-green-600 hover:text-green-800 hover:bg-green-50'
-                              }`}
-                              title={u.is_active ? 'Revoke access' : 'Restore access'}
-                            >
-                              {actionLoading === u.id ? '...' : u.is_active ? 'Revoke' : 'Restore'}
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => setEditingUser({ ...u })}
+                                className="text-xs text-navy-500 hover:text-navy-700 px-2 py-1 rounded hover:bg-navy-50"
+                                title="Edit user details"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <button
+                                onClick={() => { setResetPasswordUser(u); setNewPassword(''); }}
+                                className="text-xs text-brand-600 hover:text-brand-800 px-2 py-1 rounded hover:bg-brand-50"
+                                title="Reset password"
+                              >
+                                Reset PW
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleToggleActive(u)}
+                                disabled={actionLoading === u.id}
+                                className={`text-xs px-2 py-1 rounded ${
+                                  u.is_active
+                                    ? 'text-red-600 hover:text-red-800 hover:bg-red-50'
+                                    : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                                }`}
+                                title={u.is_active ? 'Revoke access' : 'Restore access'}
+                              >
+                                {actionLoading === u.id ? '...' : u.is_active ? 'Revoke' : 'Restore'}
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -497,8 +512,8 @@ export default function AdminPage({ user }: Props) {
                   </div>
                   <select value={newUser.role} onChange={e => setNewUser(u => ({...u, role: e.target.value}))} className="input-field">
                     <option value="rep">Sales Rep</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
+                    {isAdmin && <option value="manager">Manager</option>}
+                    {isAdmin && <option value="admin">Admin</option>}
                   </select>
                   <p className="text-xs text-navy-400">The user will need to be given their temporary password. They can log in immediately.</p>
                   <div className="flex gap-3 pt-2">
@@ -859,6 +874,153 @@ export default function AdminPage({ user }: Props) {
             >
               {seedRunning ? 'Importing Customers...' : 'Import Active Customers'}
             </button>
+          </div>
+
+          {/* Create Salespeople */}
+          <div className="card">
+            <h2 className="font-bold text-navy-900 mb-2">Create Sales Rep Accounts</h2>
+            <p className="text-sm text-navy-500 mb-4">
+              Creates CRM user accounts for all salespeople found in AccountEdge data who don't have a CRM login yet. All accounts are created as Sales Reps with a default password of <strong>changeme123</strong>.
+            </p>
+            {createSpResult && (
+              <div className={`text-sm px-4 py-3 rounded-lg mb-4 border ${
+                createSpResult.error ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'
+              }`}>
+                {createSpResult.error ? (
+                  <span>Error: {createSpResult.error}</span>
+                ) : (
+                  <div>
+                    <div className="font-medium">{createSpResult.message}</div>
+                    {createSpResult.users_created?.length > 0 && (
+                      <div className="mt-2 text-xs">
+                        <span className="font-medium">Created:</span>{' '}
+                        {createSpResult.users_created.map((u: any) => `${u.name} (${u.email})`).join(', ')}
+                      </div>
+                    )}
+                    {createSpResult.users_existed?.length > 0 && (
+                      <div className="mt-1 text-xs text-navy-500">
+                        <span className="font-medium">Already existed:</span>{' '}
+                        {createSpResult.users_existed.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              onClick={async () => {
+                setCreateSpRunning(true);
+                setCreateSpResult(null);
+                try {
+                  const data = await api.post('/admin/create-salespeople-and-assign');
+                  setCreateSpResult(data);
+                  loadUsers();
+                } catch (err: any) {
+                  setCreateSpResult({ error: err.error || err.message || 'Failed' });
+                } finally {
+                  setCreateSpRunning(false);
+                }
+              }}
+              disabled={createSpRunning}
+              className="px-6 py-3 bg-brand-600 text-white font-medium rounded-xl hover:bg-brand-700 transition-colors disabled:opacity-50"
+            >
+              {createSpRunning ? 'Creating Users...' : 'Create Sales Rep Accounts'}
+            </button>
+          </div>
+
+          {/* Auto-Assign Reps */}
+          <div className="card">
+            <h2 className="font-bold text-navy-900 mb-2">Auto-Assign Sales Reps</h2>
+            <p className="text-sm text-navy-500 mb-4">
+              Matches salesperson names from AccountEdge sales data to CRM users and assigns them to accounts that don't have a rep yet. House accounts and generic entries are skipped.
+            </p>
+            {autoAssignResult && (
+              <div className={`text-sm px-4 py-3 rounded-lg mb-4 border ${
+                autoAssignResult.error ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'
+              }`}>
+                {autoAssignResult.error ? (
+                  <span>Error: {autoAssignResult.error}</span>
+                ) : (
+                  <div>
+                    <div className="font-medium mb-1">
+                      {autoAssignResult.dry_run ? 'Preview (dry run)' : 'Assignment complete'}:
+                      {' '}{autoAssignResult.assigned} accounts {autoAssignResult.dry_run ? 'would be' : ''} assigned, {autoAssignResult.skipped} skipped
+                      {' '}(of {autoAssignResult.total_unassigned} unassigned)
+                    </div>
+                    {autoAssignResult.assignments?.length > 0 && (
+                      <div className="mt-2 max-h-48 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-green-200">
+                              <th className="text-left py-1 font-medium">Shop</th>
+                              <th className="text-left py-1 font-medium">Type</th>
+                              <th className="text-left py-1 font-medium">Salesperson</th>
+                              <th className="text-left py-1 font-medium">Assigned To</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {autoAssignResult.assignments.map((a: any, i: number) => (
+                              <tr key={i} className="border-b border-green-100">
+                                <td className="py-1">{a.shop}</td>
+                                <td className="py-1 capitalize">{a.category}</td>
+                                <td className="py-1">{a.salesperson}</td>
+                                <td className="py-1 font-medium">{a.assigned_to}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {autoAssignResult.no_match?.length > 0 && (
+                      <div className="mt-2 text-xs text-amber-700">
+                        <span className="font-medium">No match ({autoAssignResult.no_match.length}):</span>{' '}
+                        {autoAssignResult.no_match.slice(0, 10).map((n: any) => n.shop).join(', ')}
+                        {autoAssignResult.no_match.length > 10 && ` +${autoAssignResult.no_match.length - 10} more`}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={async () => {
+                  setAutoAssignRunning(true);
+                  setAutoAssignResult(null);
+                  try {
+                    const data = await api.post('/admin/auto-assign-reps', { dry_run: true });
+                    setAutoAssignResult(data);
+                  } catch (err: any) {
+                    setAutoAssignResult({ error: err.error || err.message || 'Failed' });
+                  } finally {
+                    setAutoAssignRunning(false);
+                  }
+                }}
+                disabled={autoAssignRunning}
+                className="px-6 py-3 bg-navy-600 text-white font-medium rounded-xl hover:bg-navy-700 transition-colors disabled:opacity-50"
+              >
+                {autoAssignRunning ? 'Checking...' : 'Preview Assignments'}
+              </button>
+              <button
+                onClick={async () => {
+                  setAutoAssignRunning(true);
+                  setAutoAssignResult(null);
+                  try {
+                    const data = await api.post('/admin/auto-assign-reps', { dry_run: false });
+                    setAutoAssignResult(data);
+                    loadUsers();
+                  } catch (err: any) {
+                    setAutoAssignResult({ error: err.error || err.message || 'Failed' });
+                  } finally {
+                    setAutoAssignRunning(false);
+                  }
+                }}
+                disabled={autoAssignRunning}
+                className="px-6 py-3 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                {autoAssignRunning ? 'Assigning...' : 'Run Assignment'}
+              </button>
+            </div>
           </div>
 
           <div className="card">

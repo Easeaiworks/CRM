@@ -147,10 +147,12 @@ async function startServer() {
   // ─── AUTH ROUTES ───
   app.post('/api/auth/register', authenticate, async (req, res) => {
     try {
-      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required to create users' });
+      if (req.user.role !== 'admin' && req.user.role !== 'manager') return res.status(403).json({ error: 'Admin or manager access required to create users' });
       const { email, password, first_name, last_name, role } = req.body;
       if (!email || !password || !first_name || !last_name) return res.status(400).json({ error: 'All fields required' });
       if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      // Managers can only create reps, not other managers or admins
+      if (req.user.role === 'manager' && role !== 'rep') return res.status(403).json({ error: 'Managers can only create sales rep accounts' });
       if (await queryOne('SELECT id FROM users WHERE email = $1', [email])) return res.status(409).json({ error: 'Email already exists' });
       const validRole = ['rep', 'manager', 'admin'].includes(role) ? role : 'rep';
       const hash = await bcrypt.hash(password, 12);
@@ -257,13 +259,17 @@ async function startServer() {
   // ─── ACCOUNTS ROUTES ───
   app.get('/api/accounts', authenticate, async (req, res) => {
     try {
-      const { status, assigned_rep_id, city, search, category, branch, page = '1', limit = '50' } = req.query;
+      const { status, assigned_rep_id, city, search, category, branch, my_accounts, page = '1', limit = '50' } = req.query;
       const pg = parseInt(page); const lim = parseInt(limit); const off = (pg-1)*lim;
       let where = ['a.deleted_at IS NULL']; let params = []; let idx = 1;
       if (category) { where.push(`a.account_category = $${idx++}`); params.push(category); }
       if (branch) { where.push(`a.branch ILIKE $${idx++}`); params.push(`%${branch}%`); }
       if (status) { where.push(`a.status = $${idx++}`); params.push(status); }
-      if (assigned_rep_id) { where.push(`a.assigned_rep_id = $${idx++}`); params.push(assigned_rep_id); }
+      // Filter to accounts where user is primary OR secondary rep
+      if (my_accounts === 'true') {
+        where.push(`(a.assigned_rep_id = $${idx} OR a.secondary_rep_id = $${idx+1})`);
+        params.push(req.user.userId, req.user.userId); idx += 2;
+      } else if (assigned_rep_id) { where.push(`a.assigned_rep_id = $${idx++}`); params.push(assigned_rep_id); }
       if (city) { where.push(`a.city ILIKE $${idx++}`); params.push(`%${city}%`); }
       if (search) {
         where.push(`(a.shop_name ILIKE $${idx} OR a.contact_names ILIKE $${idx+1} OR a.city ILIKE $${idx+2} OR a.email ILIKE $${idx+3} OR a.phone ILIKE $${idx+4})`);
@@ -1333,6 +1339,171 @@ async function startServer() {
       }
 
       res.json({ success: true, total: customers.length, imported, skipped, linked_sales: linked, errors: errors.slice(0, 20) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── CREATE MISSING SALESPEOPLE AS USERS + AUTO-ASSIGN (admin-only) ───
+  app.post('/api/admin/create-salespeople-and-assign', authenticate, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      // Known salesperson name -> { first_name, last_name } mapping from AccountEdge data
+      const salespeopleToCreate = [
+        { first_name: 'Jeff', last_name: 'Ward', aliases: ['Ward, Jeff', 'Jeff Ward'] },
+        { first_name: 'Richard', last_name: 'Slater', aliases: ['Slater, Richard'] },
+        { first_name: 'Douglas', last_name: 'Pike', aliases: ['Pike, Douglas'] },
+        { first_name: 'Frank', last_name: 'Chiappetta', aliases: ['Frank C', 'Frankie G.', 'Frank, Chiappetta'] },
+        { first_name: 'Jacob', last_name: 'Charbonneau', aliases: ['Charbonneau, Jacob'] },
+        { first_name: 'Tony', last_name: 'Galati', aliases: ['Tony', 'Tony G'] },
+        { first_name: 'Stefano', last_name: 'Galati', aliases: ['Galati, Stefano'] },
+        { first_name: 'Marjorie', last_name: 'Cayer', aliases: ['Marjorie Cayer'] },
+        { first_name: 'Manny', last_name: 'Rodriguez', aliases: ['Manni', 'Manny'] },
+        { first_name: 'Boris', last_name: 'Saa', aliases: ['Saa, Boris'] },
+        { first_name: 'Gabriel', last_name: 'Chiappetta', aliases: ['Gabriel Chiappetta'] },
+        { first_name: 'Pino', last_name: 'Chiappetta', aliases: ['Pino Chiappetta'] },
+        { first_name: 'Paul', last_name: 'Jassal', aliases: ['Jassal, Paul'] },
+        { first_name: 'Robert', last_name: 'Cojocarasu', aliases: ['Robert Cojocarasu'] },
+      ];
+
+      const defaultPassword = await bcrypt.hash('changeme123', 12);
+      const created = [];
+      const alreadyExist = [];
+
+      for (const sp of salespeopleToCreate) {
+        // Check if user already exists (by first+last name match)
+        const existing = await queryOne(
+          'SELECT id FROM users WHERE LOWER(first_name) = LOWER($1) AND LOWER(last_name) = LOWER($2)',
+          [sp.first_name, sp.last_name]
+        );
+        if (existing) {
+          alreadyExist.push(`${sp.first_name} ${sp.last_name}`);
+          continue;
+        }
+        // Generate email: first.last@chcpaint.com
+        const email = `${sp.first_name.toLowerCase()}.${sp.last_name.toLowerCase()}@chcpaint.com`;
+        // Check email collision
+        const emailExists = await queryOne('SELECT id FROM users WHERE email = $1', [email]);
+        if (emailExists) {
+          alreadyExist.push(`${sp.first_name} ${sp.last_name} (email exists)`);
+          continue;
+        }
+        const { lastId } = await execute(
+          'INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5)',
+          [email, defaultPassword, sp.first_name, sp.last_name, 'rep']
+        );
+        created.push({ id: lastId, name: `${sp.first_name} ${sp.last_name}`, email });
+        await logAudit(req, 'user', lastId, 'create', { email, role: 'rep', created_by: req.user.email, source: 'auto-create-salespeople' });
+      }
+
+      res.json({
+        created: created.length,
+        already_existed: alreadyExist.length,
+        users_created: created,
+        users_existed: alreadyExist,
+        message: `Created ${created.length} sales rep accounts. Default password: changeme123. Now run Auto-Assign to link accounts.`
+      });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ─── AUTO-ASSIGN REPS (admin-only — match salesperson names from sales data to CRM users) ───
+  app.post('/api/admin/auto-assign-reps', authenticate, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const dryRun = req.body.dry_run !== false; // default to dry run
+    try {
+      // 1. Get all active users
+      const users = await queryAll('SELECT id, first_name, last_name, email FROM users WHERE is_active = true');
+
+      // 2. Build flexible name matchers for each user
+      const matchers = users.map(u => {
+        const first = u.first_name.toLowerCase();
+        const last = u.last_name.toLowerCase();
+        const full = `${first} ${last}`;
+        const lastFirst = `${last}, ${first}`;
+        return { userId: u.id, name: `${u.first_name} ${u.last_name}`, patterns: [first, last, full, lastFirst] };
+      });
+
+      // 3. Get accounts with no assigned rep, along with the most common salesperson from their sales data
+      const unassigned = await queryAll(`
+        SELECT a.id, a.shop_name, a.account_category,
+          (SELECT sd.salesperson FROM sales_data sd
+           WHERE sd.account_id = a.id AND sd.salesperson IS NOT NULL AND sd.salesperson != ''
+           GROUP BY sd.salesperson ORDER BY COUNT(*) DESC LIMIT 1
+          ) as top_salesperson
+        FROM accounts a
+        WHERE a.assigned_rep_id IS NULL AND a.deleted_at IS NULL
+      `);
+
+      let assigned = 0, skipped = 0;
+      const assignments = [];
+      const noMatch = [];
+
+      for (const acct of unassigned) {
+        if (!acct.top_salesperson) {
+          // No sales data — also try customer-seed "Rep Pursuing" via contact_names? Skip for now.
+          skipped++;
+          continue;
+        }
+
+        const sp = acct.top_salesperson.toLowerCase().trim();
+
+        // Skip house accounts and generic entries
+        if (sp === 'house account' || sp === 'house' || sp === 'retail' || sp === 'chc branch') {
+          skipped++;
+          noMatch.push({ shop: acct.shop_name, salesperson: acct.top_salesperson, reason: 'House/generic account' });
+          continue;
+        }
+
+        // Try to match salesperson to a user
+        let matchedUser = null;
+
+        for (const m of matchers) {
+          // Exact match on any pattern
+          if (m.patterns.includes(sp)) {
+            matchedUser = m;
+            break;
+          }
+          // Partial: salesperson contains user's first name as a distinct word
+          // e.g. "Frank C" matches "Frank Costello", "Tony G" matches "Tony Garcia"
+          const spFirst = sp.split(/[\s,]+/)[0];
+          const mFirst = m.patterns[0]; // first name lowercase
+          if (spFirst === mFirst && spFirst.length > 2) {
+            matchedUser = m;
+            break;
+          }
+          // "Frankie G." or "Manni" — check if first name starts with same 4+ chars
+          if (spFirst.length >= 4 && mFirst.startsWith(spFirst.substring(0, 4))) {
+            matchedUser = m;
+            break;
+          }
+          if (mFirst.length >= 4 && spFirst.startsWith(mFirst.substring(0, 4))) {
+            matchedUser = m;
+            break;
+          }
+        }
+
+        if (matchedUser) {
+          if (!dryRun) {
+            await execute('UPDATE accounts SET assigned_rep_id = $1, updated_at = NOW() WHERE id = $2', [matchedUser.userId, acct.id]);
+          }
+          assigned++;
+          assignments.push({ shop: acct.shop_name, category: acct.account_category, salesperson: acct.top_salesperson, assigned_to: matchedUser.name });
+        } else {
+          skipped++;
+          noMatch.push({ shop: acct.shop_name, salesperson: acct.top_salesperson, reason: 'No matching CRM user' });
+        }
+      }
+
+      if (!dryRun) {
+        await logAudit(req, 'system', null, 'auto-assign-reps', { assigned, skipped, by: req.user.email });
+      }
+
+      res.json({
+        dry_run: dryRun,
+        total_unassigned: unassigned.length,
+        assigned,
+        skipped,
+        assignments: assignments.slice(0, 100),
+        no_match: noMatch.slice(0, 50)
+      });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

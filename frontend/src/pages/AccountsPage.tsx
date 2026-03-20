@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { User, Account, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
@@ -22,10 +22,34 @@ export default function AccountsPage({ user }: Props) {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
+  const isManager = user.role === 'admin' || user.role === 'manager';
+  // Reps default to "my accounts"; managers/admins default to "all"
+  const [myAccountsOnly, setMyAccountsOnly] = useState(!isManager);
+
+  // Debounce timer ref for live search
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevSearchRef = useRef(search);
 
   useEffect(() => {
     loadAccounts();
-  }, [page, statusFilter, category, branchFilter]);
+  }, [page, statusFilter, category, branchFilter, myAccountsOnly]);
+
+  // Live search: debounce 400ms after typing
+  useEffect(() => {
+    // Skip on initial render or if search hasn't changed
+    if (prevSearchRef.current === search) return;
+    prevSearchRef.current = search;
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setPage(1);
+      loadAccounts();
+    }, 400);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [search]);
 
   // Respond to ?search= and ?category= from URL (voice nav, etc.)
   useEffect(() => {
@@ -46,6 +70,7 @@ export default function AccountsPage({ user }: Props) {
     setLoading(true);
     try {
       const params: Record<string, string> = { page: page.toString(), limit: '25', category };
+      if (myAccountsOnly) params.my_accounts = 'true';
       if (statusFilter) params.status = statusFilter;
       if (branchFilter) params.branch = branchFilter;
       if (search) params.search = search;
@@ -134,7 +159,7 @@ export default function AccountsPage({ user }: Props) {
           <h1 className="text-xl sm:text-2xl font-bold text-navy-900">
             {category === 'customer' ? 'Active Customers' : 'Leads'}
           </h1>
-          <p className="text-navy-500 text-sm mt-1">{total} {category === 'customer' ? 'customers' : 'leads'}</p>
+          <p className="text-navy-500 text-sm mt-1">{total} {myAccountsOnly ? 'of my ' : ''}{category === 'customer' ? 'customers' : 'leads'}</p>
         </div>
         <button onClick={() => setShowAddModal(true)} className="btn-primary text-sm">
           + New {category === 'customer' ? 'Customer' : 'Lead'}
@@ -146,13 +171,25 @@ export default function AccountsPage({ user }: Props) {
         <div className="flex flex-wrap gap-3">
           <form onSubmit={handleSearch} className="flex-1 min-w-[200px]">
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, city, contact..."
-                className="input-field"
-              />
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name, city, contact, phone, email..."
+                  className="input-field w-full pr-8"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(''); setPage(1); setTimeout(() => loadAccounts(), 0); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-navy-400 hover:text-navy-600 text-lg leading-none"
+                    title="Clear search"
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
               <button type="submit" className="btn-primary">Search</button>
             </div>
           </form>
@@ -180,6 +217,31 @@ export default function AccountsPage({ user }: Props) {
               ))}
             </select>
           )}
+          {/* My Accounts / All toggle */}
+          <div className="flex items-center bg-navy-100 rounded-lg p-0.5">
+            <button
+              onClick={() => { setMyAccountsOnly(true); setPage(1); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                myAccountsOnly
+                  ? 'bg-white text-navy-900 shadow-sm'
+                  : 'text-navy-500 hover:text-navy-700'
+              }`}
+            >
+              My Accounts
+            </button>
+            {isManager && (
+              <button
+                onClick={() => { setMyAccountsOnly(false); setPage(1); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  !myAccountsOnly
+                    ? 'bg-white text-navy-900 shadow-sm'
+                    : 'text-navy-500 hover:text-navy-700'
+                }`}
+              >
+                All
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
