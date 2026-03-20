@@ -157,50 +157,63 @@ export default function ShopDetails({ account, onSave }: Props) {
   const businessTypes = parseBusinessTypes(account.business_types);
   const contractStatus = account.contract_status || 'none';
 
+  // Format last contact date
+  const lastContactDisplay = account.last_contacted_at
+    ? new Date(account.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'Never';
+  const repDisplay = account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : null;
+
   // ─── READ-ONLY VIEW ───
   if (!editing) {
     return (
       <div className="card">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-navy-900">Shop Details</h3>
+        <div className="flex justify-between items-center mb-5">
+          <h3 className="font-bold text-navy-900 text-base">Shop Details</h3>
           <button onClick={startEditing} className="btn-ghost text-sm">Edit</button>
         </div>
 
-        <div className="space-y-3 text-sm">
-          {/* Numbers row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="space-y-4 text-sm">
+          {/* Row 1: Key numbers + last contact */}
+          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-3">
             <StatBox label="Sq Ft" value={account.sq_footage} />
             <StatBox label="Revenue" value={account.annual_revenue ? `$${Number(account.annual_revenue).toLocaleString()}` : null} />
             <StatBox label="Painters" value={account.num_painters?.toString()} />
             <StatBox label="Body Men" value={account.num_body_men?.toString()} />
+            <StatBox label="Paint Booths" value={account.num_paint_booths?.toString()} />
+            <StatBox label="Last Contact" value={lastContactDisplay} highlight={!account.last_contacted_at} />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatBox label="Paint Booths" value={account.num_paint_booths?.toString()} />
+          {/* Row 2: Products & brands */}
+          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-3">
             <StatBox label="Paint Line" value={account.paint_line} />
             <StatBox label="Cup Brand" value={account.cup_brand} />
             <StatBox label="Paper Brand" value={account.paper_brand} />
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatBox label="Filler" value={account.filler_brand} />
             <StatBox label="Banner" value={account.banner} />
             <StatBox label="Buy From" value={account.suppliers} />
-            <div className="bg-navy-50 rounded-lg p-2.5">
-              <div className="text-[10px] uppercase tracking-wide text-navy-400 mb-0.5">Contract</div>
+          </div>
+
+          {/* Row 3: Contract + Rep */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className="bg-navy-50 rounded-lg p-3">
+              <div className="text-[10px] uppercase tracking-wide text-navy-400 mb-1">Contract Status</div>
               <div className={`font-semibold text-sm ${CONTRACT_STATUS_COLORS[contractStatus]}`}>
                 {CONTRACT_STATUS_LABELS[contractStatus] || 'None'}
               </div>
             </div>
+            {repDisplay && <StatBox label="Assigned Rep" value={repDisplay} />}
+            {account.follow_up_date && (
+              <StatBox label="Follow-Up" value={new Date(account.follow_up_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} />
+            )}
           </div>
 
           {/* Business Types */}
           {businessTypes.length > 0 && (
-            <div className="pt-2 border-t border-navy-50">
-              <div className="text-xs text-navy-400 mb-2">Business Type</div>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="pt-3 border-t border-navy-100">
+              <div className="text-xs text-navy-400 mb-2 font-medium">Business Type</div>
+              <div className="flex flex-wrap gap-2">
                 {businessTypes.map(t => (
-                  <span key={t} className="text-xs bg-brand-50 text-brand-700 px-2.5 py-1 rounded-full font-medium">{t}</span>
+                  <span key={t} className="text-xs bg-brand-50 text-brand-700 px-3 py-1.5 rounded-full font-medium">{t}</span>
                 ))}
               </div>
               {account.business_type_notes && (
@@ -211,16 +224,16 @@ export default function ShopDetails({ account, onSave }: Props) {
 
           {/* Deal Details */}
           {account.deal_details && (
-            <div className="pt-2 border-t border-navy-50">
-              <div className="text-xs text-navy-400 mb-1">Deal Details</div>
+            <div className="pt-3 border-t border-navy-100">
+              <div className="text-xs text-navy-400 mb-1 font-medium">Deal Details</div>
               <p className="text-sm text-navy-700 whitespace-pre-wrap">{account.deal_details}</p>
             </div>
           )}
 
           {/* Contract File & Expiration */}
           {(account.contract_file_path || account.contract_expiration_date) && (
-            <div className="pt-2 border-t border-navy-50">
-              <div className="text-xs text-navy-400 mb-2">CHC Contract</div>
+            <div className="pt-3 border-t border-navy-100">
+              <div className="text-xs text-navy-400 mb-2 font-medium">CHC Contract</div>
               <div className="flex flex-wrap items-center gap-4">
                 {account.contract_file_path && (
                   <a
@@ -239,7 +252,7 @@ export default function ShopDetails({ account, onSave }: Props) {
                   const isExpired = daysUntil < 0;
                   const isExpiringSoon = daysUntil >= 0 && daysUntil <= 30;
                   return (
-                    <div className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1 rounded-lg ${
+                    <div className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg ${
                       isExpired ? 'bg-red-50 text-red-700 border border-red-200' :
                       isExpiringSoon ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                       'bg-green-50 text-green-700 border border-green-200'
@@ -274,7 +287,7 @@ export default function ShopDetails({ account, onSave }: Props) {
 
       <div className="space-y-4">
         {/* Row 1: Numbers */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <FieldInput label="Shop Sq Ft" type="text" value={form.sq_footage} onChange={v => setForm(f => ({ ...f, sq_footage: v }))} placeholder="e.g. 5000" />
           <FieldInput label="Shop Revenue" type="text" value={form.annual_revenue} onChange={v => setForm(f => ({ ...f, annual_revenue: v }))} placeholder="e.g. 500000" />
           <FieldInput label="# Painters" type="number" value={form.num_painters} onChange={v => setForm(f => ({ ...f, num_painters: v }))} placeholder="0" />
@@ -283,7 +296,7 @@ export default function ShopDetails({ account, onSave }: Props) {
         </div>
 
         {/* Row 2: Dropdowns */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <FieldSelect label="Paint Line" value={form.paint_line} onChange={v => setForm(f => ({ ...f, paint_line: v }))} options={PAINT_LINE_OPTIONS} />
           <FieldSelect label="Cup Brand" value={form.cup_brand} onChange={v => setForm(f => ({ ...f, cup_brand: v }))} options={CUP_BRAND_OPTIONS} />
           <FieldSelect label="Paper Brand" value={form.paper_brand} onChange={v => setForm(f => ({ ...f, paper_brand: v }))} options={PAPER_BRAND_OPTIONS} />
@@ -377,11 +390,11 @@ export default function ShopDetails({ account, onSave }: Props) {
 
 // ─── Reusable sub-components ───
 
-function StatBox({ label, value }: { label: string; value: string | null | undefined }) {
+function StatBox({ label, value, highlight }: { label: string; value: string | null | undefined; highlight?: boolean }) {
   return (
-    <div className="bg-navy-50 rounded-lg p-2.5">
-      <div className="text-[10px] uppercase tracking-wide text-navy-400 mb-0.5">{label}</div>
-      <div className="font-semibold text-sm text-navy-800 truncate">{value || '—'}</div>
+    <div className="bg-navy-50 rounded-lg p-3">
+      <div className="text-[10px] uppercase tracking-wide text-navy-400 mb-1">{label}</div>
+      <div className={`font-semibold text-sm truncate ${highlight ? 'text-amber-600' : 'text-navy-800'}`}>{value || '—'}</div>
     </div>
   );
 }

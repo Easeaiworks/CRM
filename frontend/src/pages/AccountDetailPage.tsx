@@ -232,79 +232,64 @@ export default function AccountDetailPage({ user }: Props) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Left column: Account details */}
-        <div className="lg:col-span-1 space-y-4 sm:space-y-6">
-          {/* Contact Info */}
-          <div className="card">
-            <h3 className="font-bold text-navy-900 mb-4">Contact Information</h3>
-            {editing ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">Shop Name</label>
-                  <input className="input-field" value={editForm.shop_name || ''} onChange={e => setEditForm(f => ({...f, shop_name: e.target.value}))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">Contact Names</label>
-                  <input className="input-field" value={editForm.contact_names || ''} onChange={e => setEditForm(f => ({...f, contact_names: e.target.value}))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">Phone</label>
-                  <input className="input-field" type="tel" value={editForm.phone || ''} onChange={e => setEditForm(f => ({...f, phone: e.target.value}))} placeholder="e.g. 613-555-1234" />
-                </div>
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">Email</label>
-                  <input className="input-field" type="email" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} placeholder="e.g. joe@acmecollision.com" />
-                </div>
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">Address</label>
-                  <input className="input-field" value={editForm.address || ''} onChange={e => setEditForm(f => ({...f, address: e.target.value}))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">City</label>
-                  <input className="input-field" value={editForm.city || ''} onChange={e => setEditForm(f => ({...f, city: e.target.value}))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-navy-500 mb-1">Status</label>
-                  <select className="input-field" value={editForm.status || 'prospect'} onChange={e => setEditForm(f => ({...f, status: e.target.value as StatusType}))}>
-                    {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </div>
-                <button onClick={saveEdit} className="btn-primary w-full">Save Changes</button>
-              </div>
-            ) : (
-              <div className="space-y-3 text-sm">
-                <InfoRow label="Contact(s)" value={account.contact_names} />
-                <InfoRow label="Phone" value={account.phone} href={hasPhone ? `tel:${phoneHref}` : undefined} />
-                <InfoRow label="Email" value={account.email} href={hasEmail ? `mailto:${account.email}` : undefined} />
-                <InfoRow label="Address" value={account.address} />
-                <InfoRow label="City" value={account.city} />
-              </div>
-            )}
-          </div>
-
-          {/* Shop Details — full edit/save component */}
-          <ShopDetails account={account} onSave={loadAccount} />
-
-          {/* Other Business Details */}
-          <div className="card">
-            <h3 className="font-bold text-navy-900 mb-4">Account Info</h3>
-            <div className="space-y-3 text-sm">
-              <InfoRow label="Type" value={account.account_type} />
-              <InfoRow label="Sundries" value={account.sundries} />
-              <InfoRow label="Allied Products" value={account.allied_products} />
-              <InfoRow label="MPO" value={account.mpo} />
-              <InfoRow label="# Techs" value={account.num_techs?.toString()} />
-              <InfoRow label="Former Sherwin" value={account.former_sherwin_client ? 'Yes' : 'No'} />
-              <InfoRow label="Rep" value={account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : null} />
-              <InfoRow label="Follow-Up" value={account.follow_up_date} />
-              <InfoRow label="Last Contact" value={account.last_contacted_at ? new Date(account.last_contacted_at).toLocaleDateString() : 'Never'} />
+      {/* Contact Info — compact row */}
+      <div className="card mb-4 sm:mb-6">
+        <h3 className="font-bold text-navy-900 mb-4">Contact Information</h3>
+        {editing ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Shop Name</label>
+              <input className="input-field" value={editForm.shop_name || ''} onChange={e => setEditForm(f => ({...f, shop_name: e.target.value}))} />
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Contact Names</label>
+              <input className="input-field" value={editForm.contact_names || ''} onChange={e => setEditForm(f => ({...f, contact_names: e.target.value}))} />
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Phone</label>
+              <input className="input-field" type="tel" value={editForm.phone || ''} onChange={e => setEditForm(f => ({...f, phone: e.target.value}))} placeholder="e.g. 613-555-1234" />
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Email</label>
+              <input className="input-field" type="email" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} placeholder="e.g. joe@acmecollision.com" />
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Address</label>
+              <input className="input-field" value={editForm.address || ''} onChange={e => setEditForm(f => ({...f, address: e.target.value}))} />
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">City</label>
+              <input className="input-field" value={editForm.city || ''} onChange={e => setEditForm(f => ({...f, city: e.target.value}))} />
+            </div>
+            <div>
+              <label className="block text-xs text-navy-500 mb-1">Status</label>
+              <select className="input-field" value={editForm.status || 'prospect'} onChange={e => setEditForm(f => ({...f, status: e.target.value as StatusType}))}>
+                {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <button onClick={saveEdit} className="btn-primary w-full sm:w-auto">Save Changes</button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-2 text-sm">
+            <InfoRow label="Contact(s)" value={account.contact_names} />
+            <InfoRow label="Phone" value={account.phone} href={hasPhone ? `tel:${phoneHref}` : undefined} />
+            <InfoRow label="Email" value={account.email} href={hasEmail ? `mailto:${account.email}` : undefined} />
+            <InfoRow label="Address" value={account.address} />
+            <InfoRow label="City" value={account.city} />
+          </div>
+        )}
+      </div>
 
-        {/* Right column: Notes & Activities */}
-        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+      {/* Shop Details — full width */}
+      <div className="mb-4 sm:mb-6">
+        <ShopDetails account={account} onSave={loadAccount} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-1 gap-4 sm:gap-6">
+        {/* Notes & Activities — full width */}
+        <div className="space-y-4 sm:space-y-6">
           {/* Add Note — with optional activity type dropdown */}
           <div className="card">
             <h3 className="font-bold text-navy-900 mb-3">Add Note</h3>
