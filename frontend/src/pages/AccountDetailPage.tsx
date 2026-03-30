@@ -210,11 +210,18 @@ export default function AccountDetailPage({ user }: Props) {
     </div>
   );
 
-  // Clean phone for tel:/sms: links
+  // Derive primary phone & email from the phone_numbers / email_addresses arrays
   const cleanPhone = (phone: string) => phone.replace(/[^\d+]/g, '');
-  const hasPhone = !!account.phone?.trim();
-  const hasEmail = !!account.email?.trim();
-  const phoneHref = hasPhone ? cleanPhone(account.phone!) : '';
+  const accountPhones = parsePhoneNumbers(account);
+  const primaryPhone = accountPhones.find(p => p.is_primary) || accountPhones[0] || null;
+  const hasPhone = !!primaryPhone?.number?.trim();
+  const phoneHref = hasPhone ? cleanPhone(primaryPhone!.number) : '';
+  const phoneDisplay = primaryPhone ? `${primaryPhone.number}${primaryPhone.label ? ` (${primaryPhone.label})` : ''}` : '';
+
+  const accountEmails = parseEmailAddresses(account);
+  const primaryEmail = accountEmails.find(e => e.is_primary) || accountEmails[0] || null;
+  const hasEmail = !!primaryEmail?.address?.trim();
+  const emailDisplay = primaryEmail ? `${primaryEmail.address}${primaryEmail.type ? ` (${primaryEmail.type})` : ''}` : '';
 
   return (
     <div>
@@ -258,7 +265,7 @@ export default function AccountDetailPage({ user }: Props) {
             >
               <span className="text-2xl">📞</span>
               <span className="text-xs sm:text-sm font-medium">Call</span>
-              <span className="text-[10px] text-green-500 hidden sm:block truncate max-w-full px-2">{account.phone}</span>
+              <span className="text-[10px] text-green-500 hidden sm:block truncate max-w-full px-2">{phoneDisplay}</span>
             </button>
           ) : (
             <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
@@ -274,7 +281,7 @@ export default function AccountDetailPage({ user }: Props) {
             >
               <span className="text-2xl">💬</span>
               <span className="text-xs sm:text-sm font-medium">Text</span>
-              <span className="text-[10px] text-blue-500 hidden sm:block truncate max-w-full px-2">{account.phone}</span>
+              <span className="text-[10px] text-blue-500 hidden sm:block truncate max-w-full px-2">{phoneDisplay}</span>
             </button>
           ) : (
             <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
@@ -285,12 +292,12 @@ export default function AccountDetailPage({ user }: Props) {
 
           {hasEmail ? (
             <button
-              onClick={() => handleContactAction('email', `mailto:${account.email}`)}
+              onClick={() => handleContactAction('email', `mailto:${primaryEmail!.address}`)}
               className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 transition-colors active:scale-95"
             >
               <span className="text-2xl">📧</span>
               <span className="text-xs sm:text-sm font-medium">Email</span>
-              <span className="text-[10px] text-purple-500 hidden sm:block truncate max-w-full px-2">{account.email}</span>
+              <span className="text-[10px] text-purple-500 hidden sm:block truncate max-w-full px-2">{emailDisplay}</span>
             </button>
           ) : (
             <div className="flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-xl bg-navy-50 border border-navy-100 text-navy-300">
