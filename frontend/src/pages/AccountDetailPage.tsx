@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import { User, Account, Note, Activity, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
+import { User, Account, Note, Activity, PhoneEntry, STATUS_LABELS, STATUS_COLORS, StatusType } from '../types';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import ShopDetails from '../components/accounts/ShopDetails';
 
@@ -16,6 +16,20 @@ export default function AccountDetailPage({ user }: Props) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Account>>({});
+  const [editPhones, setEditPhones] = useState<PhoneEntry[]>([]);
+
+  // Parse phone_numbers JSON from account
+  const parsePhoneNumbers = (acc: Account): PhoneEntry[] => {
+    try {
+      const raw = acc.phone_numbers;
+      if (!raw) return acc.phone ? [{ number: acc.phone, label: 'Main', is_primary: true }] : [];
+      const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+      return acc.phone ? [{ number: acc.phone, label: 'Main', is_primary: true }] : [];
+    } catch {
+      return acc.phone ? [{ number: acc.phone, label: 'Main', is_primary: true }] : [];
+    }
+  };
 
   // Note input
   const [newNote, setNewNote] = useState('');
@@ -155,7 +169,10 @@ export default function AccountDetailPage({ user }: Props) {
 
   const saveEdit = async () => {
     try {
-      await api.put(`/accounts/${id}`, editForm);
+      await api.put(`/accounts/${id}`, {
+        ...editForm,
+        phone_numbers: JSON.stringify(editPhones),
+      });
       setEditing(false);
       loadAccount();
     } catch (err) {
@@ -208,7 +225,7 @@ export default function AccountDetailPage({ user }: Props) {
             {account.contact_names && <span className="text-sm text-navy-400">{account.contact_names}</span>}
           </div>
         </div>
-        <button onClick={() => setEditing(!editing)} className="btn-ghost text-sm self-start">
+        <button onClick={() => { if (!editing && account) setEditPhones(parsePhoneNumbers(account)); setEditing(!editing); }} className="btn-ghost text-sm self-start">
           {editing ? 'Cancel' : 'Edit'}
         </button>
       </div>
@@ -278,57 +295,142 @@ export default function AccountDetailPage({ user }: Props) {
       <div className="card mb-4 sm:mb-6">
         <h3 className="font-bold text-navy-900 mb-4">Contact Information</h3>
         {editing ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Shop Name</label>
-              <input className="input-field" value={editForm.shop_name || ''} onChange={e => setEditForm(f => ({...f, shop_name: e.target.value}))} />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">Shop Name</label>
+                <input className="input-field" value={editForm.shop_name || ''} onChange={e => setEditForm(f => ({...f, shop_name: e.target.value}))} />
+              </div>
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">Contact Names</label>
+                <input className="input-field" value={editForm.contact_names || ''} onChange={e => setEditForm(f => ({...f, contact_names: e.target.value}))} />
+              </div>
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">Email</label>
+                <input className="input-field" type="email" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} placeholder="e.g. joe@acmecollision.com" />
+              </div>
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">Address</label>
+                <input className="input-field" value={editForm.address || ''} onChange={e => setEditForm(f => ({...f, address: e.target.value}))} />
+              </div>
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">City</label>
+                <input className="input-field" value={editForm.city || ''} onChange={e => setEditForm(f => ({...f, city: e.target.value}))} />
+              </div>
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">Status</label>
+                <select className="input-field" value={editForm.status || 'prospect'} onChange={e => setEditForm(f => ({...f, status: e.target.value as StatusType}))}>
+                  {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-navy-500 mb-1">Branch</label>
+                <select className="input-field" value={editForm.branch || ''} onChange={e => setEditForm(f => ({...f, branch: e.target.value}))}>
+                  <option value="">— Unassigned —</option>
+                  {['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'].map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Contact Names</label>
-              <input className="input-field" value={editForm.contact_names || ''} onChange={e => setEditForm(f => ({...f, contact_names: e.target.value}))} />
-            </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Phone</label>
-              <input className="input-field" type="tel" value={editForm.phone || ''} onChange={e => setEditForm(f => ({...f, phone: e.target.value}))} placeholder="e.g. 613-555-1234" />
-            </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Email</label>
-              <input className="input-field" type="email" value={editForm.email || ''} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} placeholder="e.g. joe@acmecollision.com" />
-            </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Address</label>
-              <input className="input-field" value={editForm.address || ''} onChange={e => setEditForm(f => ({...f, address: e.target.value}))} />
-            </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">City</label>
-              <input className="input-field" value={editForm.city || ''} onChange={e => setEditForm(f => ({...f, city: e.target.value}))} />
-            </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Status</label>
-              <select className="input-field" value={editForm.status || 'prospect'} onChange={e => setEditForm(f => ({...f, status: e.target.value as StatusType}))}>
-                {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-navy-500 mb-1">Branch</label>
-              <select className="input-field" value={editForm.branch || ''} onChange={e => setEditForm(f => ({...f, branch: e.target.value}))}>
-                <option value="">— Unassigned —</option>
-                {['Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'].map(b => (
-                  <option key={b} value={b}>{b}</option>
+
+            {/* ─── Phone Numbers ─── */}
+            <div className="border-t border-navy-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs text-navy-500 font-semibold uppercase">Phone Numbers</label>
+                <button
+                  type="button"
+                  onClick={() => setEditPhones(prev => [...prev, { number: '', label: '', is_primary: prev.length === 0 }])}
+                  className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
+                >
+                  + Add Number
+                </button>
+              </div>
+              {editPhones.length === 0 && (
+                <p className="text-sm text-navy-400 italic">No phone numbers. Click "Add Number" to add one.</p>
+              )}
+              <div className="space-y-2">
+                {editPhones.map((ph, i) => (
+                  <div key={i} className={`flex items-center gap-2 p-2 rounded-lg border ${ph.is_primary ? 'border-green-300 bg-green-50' : 'border-navy-100 bg-white'}`}>
+                    <label className="flex items-center gap-1.5 flex-shrink-0 cursor-pointer" title="Set as main contact number">
+                      <input
+                        type="checkbox"
+                        checked={ph.is_primary}
+                        onChange={() => setEditPhones(prev => prev.map((p, j) => ({ ...p, is_primary: j === i })))}
+                        className="w-4 h-4 accent-green-600"
+                      />
+                      <span className="text-[10px] text-navy-500 font-medium hidden sm:inline">Main</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={ph.number}
+                      onChange={e => setEditPhones(prev => prev.map((p, j) => j === i ? { ...p, number: e.target.value } : p))}
+                      className="input-field flex-1 min-w-0"
+                      placeholder="e.g. 905-555-1234"
+                    />
+                    <input
+                      type="text"
+                      value={ph.label}
+                      onChange={e => setEditPhones(prev => prev.map((p, j) => j === i ? { ...p, label: e.target.value } : p))}
+                      className="input-field w-28 sm:w-36"
+                      placeholder="Label (e.g. Neil)"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = editPhones.filter((_, j) => j !== i);
+                        // If we removed the primary, make first one primary
+                        if (ph.is_primary && updated.length > 0) updated[0].is_primary = true;
+                        setEditPhones(updated);
+                      }}
+                      className="text-red-400 hover:text-red-600 text-lg flex-shrink-0 px-1"
+                      title="Remove"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 ))}
-              </select>
+              </div>
+              {editPhones.some(p => p.is_primary) && (
+                <p className="text-[10px] text-green-600 mt-2">The checked number will be used for Call and Text buttons.</p>
+              )}
             </div>
-            <div className="sm:col-span-2 lg:col-span-3">
+
+            <div>
               <button onClick={saveEdit} className="btn-primary w-full sm:w-auto">Save Changes</button>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-2 text-sm">
-            <InfoRow label="Contact(s)" value={account.contact_names} />
-            <InfoRow label="Phone" value={account.phone} href={hasPhone ? `tel:${phoneHref}` : undefined} />
-            <InfoRow label="Email" value={account.email} href={hasEmail ? `mailto:${account.email}` : undefined} />
-            <InfoRow label="Address" value={account.address} />
-            <InfoRow label="City" value={account.city} />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-2 text-sm">
+              <InfoRow label="Contact(s)" value={account.contact_names} />
+              <InfoRow label="Email" value={account.email} href={hasEmail ? `mailto:${account.email}` : undefined} />
+              <InfoRow label="Address" value={account.address} />
+              <InfoRow label="City" value={account.city} />
+            </div>
+            {/* Phone numbers list */}
+            {(() => {
+              const phones = parsePhoneNumbers(account);
+              if (phones.length === 0) return <div className="text-sm text-navy-400">No phone numbers</div>;
+              return (
+                <div className="border-t border-navy-100 pt-3">
+                  <div className="text-xs text-navy-500 font-semibold uppercase mb-2">Phone Numbers</div>
+                  <div className="space-y-1.5">
+                    {phones.map((ph, i) => {
+                      const clean = ph.number.replace(/[^\d+]/g, '');
+                      return (
+                        <div key={i} className={`flex items-center gap-2 text-sm ${ph.is_primary ? 'font-medium text-navy-900' : 'text-navy-600'}`}>
+                          {ph.is_primary && <span className="text-green-600 text-xs font-bold bg-green-50 px-1.5 py-0.5 rounded">Main</span>}
+                          <a href={`tel:${clean}`} className="hover:text-brand-600 underline decoration-dotted">{ph.number}</a>
+                          {ph.label && <span className="text-navy-400 text-xs">({ph.label})</span>}
+                          <a href={`sms:${clean}`} className="text-blue-500 hover:text-blue-700 text-xs ml-1" title="Text this number">Text</a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

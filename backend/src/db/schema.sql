@@ -208,6 +208,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 DO $$ BEGIN
+  ALTER TABLE accounts ADD COLUMN phone_numbers TEXT DEFAULT '[]';
+EXCEPTION WHEN duplicate_column THEN NULL;
+END $$;
+DO $$ BEGIN
   ALTER TABLE accounts ADD COLUMN accountedge_card_id TEXT;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;

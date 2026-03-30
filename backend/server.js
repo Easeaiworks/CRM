@@ -334,13 +334,26 @@ async function startServer() {
     try {
       const existing = await queryOne('SELECT * FROM accounts WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
       if (!existing) return res.status(404).json({ error: 'Not found' });
-      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2','num_painters','num_body_men','num_paint_booths','cup_brand','paper_brand','filler_brand','contract_status','deal_details','banner','business_types','business_type_notes','contract_file_path','contract_expiration_date','secondary_rep_id'];
+      const fields = ['shop_name','address','city','area','province','contact_names','phone','email','account_type','assigned_rep_id','status','suppliers','paint_line','allied_products','sundries','has_contract','mpo','num_techs','sq_footage','annual_revenue','former_sherwin_client','follow_up_date','tags','account_category','branch','postal_code','phone2','num_painters','num_body_men','num_paint_booths','cup_brand','paper_brand','filler_brand','contract_status','deal_details','banner','business_types','business_type_notes','contract_file_path','contract_expiration_date','secondary_rep_id','phone_numbers'];
+      // If phone_numbers is provided, auto-sync the primary number into `phone` for backward compat
+      if (req.body.phone_numbers) {
+        try {
+          const nums = typeof req.body.phone_numbers === 'string' ? JSON.parse(req.body.phone_numbers) : req.body.phone_numbers;
+          if (Array.isArray(nums)) {
+            const primary = nums.find(n => n.is_primary) || nums[0];
+            if (primary) req.body.phone = primary.number;
+            else req.body.phone = null;
+            req.body.phone_numbers = JSON.stringify(nums);
+          }
+        } catch (e) { /* leave as-is */ }
+      }
       const updates = ['updated_at = NOW()']; const params = []; const changes = {};
       let idx = 1;
       for (const f of fields) {
         if (req.body[f] !== undefined) {
           let v = req.body[f];
           if ((f === 'tags' || f === 'business_types') && Array.isArray(v)) v = JSON.stringify(v);
+          if (f === 'phone_numbers' && Array.isArray(v)) v = JSON.stringify(v);
           if (f === 'has_contract' || f === 'former_sherwin_client') v = v ? true : false;
           updates.push(`${f} = $${idx++}`); params.push(v); changes[f] = { from: existing[f], to: v };
         }

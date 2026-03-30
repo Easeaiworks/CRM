@@ -6,6 +6,12 @@ export interface User {
   role: 'rep' | 'manager' | 'admin';
 }
 
+export interface PhoneEntry {
+  number: string;
+  label: string;
+  is_primary: boolean;
+}
+
 export interface Account {
   id: number;
   shop_name: string;
@@ -17,6 +23,7 @@ export interface Account {
   contact_names: string | null;
   phone: string | null;
   phone2: string | null;
+  phone_numbers: string | PhoneEntry[] | null;
   email: string | null;
   account_type: string;
   account_category: 'lead' | 'customer';
