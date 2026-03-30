@@ -670,7 +670,7 @@ export default function AccountDetailPage({ user }: Props) {
                     const note = isNote ? (item.data as Note) : null;
                     const activity = !isNote ? (item.data as Activity) : null;
                     const tagConfig = activity ? ACTIVITY_TAGS[activity.activity_type] || ACTIVITY_TAGS.other : null;
-                    const canEdit = isNote && (note!.created_by_id === user.id || user.role !== 'rep');
+                    const canEdit = isNote && note!.created_by_id === user.id;
                     const isEditing = isNote && editingNoteId === note!.id;
 
                     return (
@@ -706,9 +706,16 @@ export default function AccountDetailPage({ user }: Props) {
                                   Edit
                                 </button>
                               )}
-                              <span className="text-xs text-navy-400">
-                                {new Date(item.date).toLocaleDateString()} {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
+                              <div className="text-right flex-shrink-0">
+                                <span className="text-xs text-navy-400">
+                                  {new Date(item.date).toLocaleDateString()} {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                {isNote && note!.updated_at && note!.updated_at !== note!.created_at && (
+                                  <div className="text-[10px] text-navy-400 italic">
+                                    edited {new Date(note!.updated_at).toLocaleDateString()} {new Date(note!.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                           {/* Note content — editable or read-only */}

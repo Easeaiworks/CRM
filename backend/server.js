@@ -455,8 +455,8 @@ async function startServer() {
     try {
       const note = await queryOne('SELECT * FROM notes WHERE id=$1', [req.params.id]);
       if (!note) return res.status(404).json({ error: 'Note not found' });
-      // Reps can only edit their own notes; managers/admins can edit any
-      if (req.user.role === 'rep' && note.created_by_id !== req.user.userId) {
+      // Only the original author can edit their own notes
+      if (note.created_by_id !== req.user.userId) {
         return res.status(403).json({ error: 'You can only edit your own notes' });
       }
       if (!req.body.content?.trim()) return res.status(400).json({ error: 'Content required' });
