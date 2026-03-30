@@ -317,6 +317,8 @@ async function startServer() {
     try {
       const b = req.body;
       if (!b.shop_name) return res.status(400).json({ error: 'shop_name required' });
+      // Auto-assign the creating user as the rep if not explicitly set
+      if (!b.assigned_rep_id) b.assigned_rep_id = req.user.userId;
       if (!b.skip_duplicate_check) {
         const dupes = await findDuplicates(b.shop_name, b.city);
         if (dupes.length > 0) return res.status(409).json({ error: 'Potential duplicate', duplicates: dupes.map(d => ({
