@@ -176,7 +176,7 @@ export default function AccountsPage({ user }: Props) {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name, city, contact, phone, email..."
+                  placeholder="Search by name, branch, city, rep, contact, phone..."
                   className="input-field w-full pr-8"
                 />
                 {search && (

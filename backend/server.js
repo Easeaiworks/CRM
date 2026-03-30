@@ -272,13 +272,14 @@ async function startServer() {
       } else if (assigned_rep_id) { where.push(`a.assigned_rep_id = $${idx++}`); params.push(assigned_rep_id); }
       if (city) { where.push(`a.city ILIKE $${idx++}`); params.push(`%${city}%`); }
       if (search) {
-        where.push(`(a.shop_name ILIKE $${idx} OR a.contact_names ILIKE $${idx+1} OR a.city ILIKE $${idx+2} OR a.email ILIKE $${idx+3} OR a.phone ILIKE $${idx+4})`);
-        const s = `%${search}%`; params.push(s,s,s,s,s); idx += 5;
+        where.push(`(a.shop_name ILIKE $${idx} OR a.contact_names ILIKE $${idx+1} OR a.city ILIKE $${idx+2} OR a.email ILIKE $${idx+3} OR a.phone ILIKE $${idx+4} OR a.branch ILIKE $${idx+5} OR a.address ILIKE $${idx+6} OR CONCAT(u.first_name, ' ', u.last_name) ILIKE $${idx+7})`);
+        const s = `%${search}%`; params.push(s,s,s,s,s,s,s,s); idx += 8;
       }
       const w = 'WHERE ' + where.join(' AND ');
-      const total = await queryOne(`SELECT COUNT(*) as total FROM accounts a ${w}`, params);
+      const joinClause = 'LEFT JOIN users u ON a.assigned_rep_id=u.id';
+      const total = await queryOne(`SELECT COUNT(*) as total FROM accounts a ${joinClause} ${w}`, params);
       const accounts = await queryAll(
-        `SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a LEFT JOIN users u ON a.assigned_rep_id=u.id ${w} ORDER BY a.shop_name LIMIT $${idx++} OFFSET $${idx++}`,
+        `SELECT a.*, u.first_name as rep_first_name, u.last_name as rep_last_name FROM accounts a ${joinClause} ${w} ORDER BY a.shop_name LIMIT $${idx++} OFFSET $${idx++}`,
         [...params, lim, off]);
       res.json({ accounts, pagination: { page: pg, limit: lim, total: parseInt(total?.total) || 0, totalPages: Math.ceil((parseInt(total?.total)||0)/lim) } });
     } catch (e) { res.status(500).json({ error: e.message }); }
