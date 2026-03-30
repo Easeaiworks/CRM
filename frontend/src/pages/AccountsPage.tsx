@@ -268,7 +268,7 @@ export default function AccountsPage({ user }: Props) {
                     <div className="font-bold text-navy-900 truncate">{account.shop_name}</div>
                     <div className="text-sm text-navy-500 mt-1">
                       {account.city || 'No city'}
-                      {account.branch && category === 'customer' && (
+                      {account.branch && (
                         <span className="text-navy-400"> &middot; {account.branch}</span>
                       )}
                     </div>
@@ -359,9 +359,7 @@ export default function AccountsPage({ user }: Props) {
                 <tr className="border-b border-navy-100">
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Shop Name</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">City</th>
-                  {category === 'customer' && (
-                    <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Branch</th>
-                  )}
+                  <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Branch</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Contact</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase">Rep</th>
                   <th className="text-left py-3 px-4 text-xs font-medium text-navy-500 uppercase hidden lg:table-cell">Paint Line</th>
@@ -380,9 +378,7 @@ export default function AccountsPage({ user }: Props) {
                       </Link>
                     </td>
                     <td className="py-3 px-4 text-sm text-navy-600">{account.city || '-'}</td>
-                    {category === 'customer' && (
-                      <td className="py-3 px-4 text-sm text-navy-500">{account.branch || '-'}</td>
-                    )}
+                    <td className="py-3 px-4 text-sm text-navy-500">{account.branch || '-'}</td>
                     <td className="py-3 px-4 text-sm text-navy-600">{account.contact_names || '-'}</td>
                     <td className="py-3 px-4 text-sm text-navy-600">
                       {account.rep_first_name ? `${account.rep_first_name} ${account.rep_last_name}` : <span className="text-navy-300">Unassigned</span>}
