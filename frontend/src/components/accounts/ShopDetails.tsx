@@ -20,6 +20,7 @@ const CUP_BRAND_OPTIONS = ['', '3M PPS', 'SATA RPS', 'DeVilbiss DeKups', 'Colad 
 const PAPER_BRAND_OPTIONS = ['', '3M', 'Norton', 'Mirka', 'Indasa', 'Klingspor', 'Other'];
 const FILLER_OPTIONS = ['', 'Bondo/3M', 'Evercoat', 'USC', 'U-POL', 'Other'];
 const BANNER_OPTIONS = ['', 'CARSTAR', 'Fix Auto', 'Boyd/Gerber', 'CSN Collision', 'Assured Auto', 'None', 'Other'];
+const BRANCH_OPTIONS = ['', 'Hamilton', 'Markham', 'Oakville', 'Ottawa', 'St. Catharines', 'Woodbridge'];
 const CONTRACT_STATUS_OPTIONS = ['none', 'pending', 'active', 'expired', 'cancelled'];
 const BUSINESS_TYPE_OPTIONS = [
   'Commercial Vehicles',
@@ -84,6 +85,7 @@ export default function ShopDetails({ account, user, onSave }: Props) {
     suppliers: account.suppliers || '',
     deal_details: account.deal_details || '',
     banner: account.banner || '',
+    branch: account.branch || '',
     business_types: parseBusinessTypes(account.business_types),
     business_type_notes: account.business_type_notes || '',
     contract_expiration_date: account.contract_expiration_date || '',
@@ -106,6 +108,7 @@ export default function ShopDetails({ account, user, onSave }: Props) {
       suppliers: account.suppliers || '',
       deal_details: account.deal_details || '',
       banner: account.banner || '',
+      branch: account.branch || '',
       business_types: parseBusinessTypes(account.business_types),
       business_type_notes: account.business_type_notes || '',
       contract_expiration_date: account.contract_expiration_date || '',
@@ -132,6 +135,7 @@ export default function ShopDetails({ account, user, onSave }: Props) {
         suppliers: form.suppliers || null,
         deal_details: form.deal_details || null,
         banner: form.banner || null,
+        branch: form.branch || null,
         business_types: form.business_types,
         business_type_notes: form.business_type_notes || null,
         contract_expiration_date: form.contract_expiration_date || null,
@@ -228,6 +232,7 @@ export default function ShopDetails({ account, user, onSave }: Props) {
                 {CONTRACT_STATUS_LABELS[contractStatus] || 'None'}
               </div>
             </div>
+            <StatBox label="Branch" value={account.branch || 'Unassigned'} highlight={!account.branch} />
             {repDisplay && <StatBox label="Primary Rep" value={repDisplay} />}
             {secondaryRepDisplay && <StatBox label="Secondary Rep" value={secondaryRepDisplay} />}
             {account.follow_up_date && (
@@ -333,9 +338,26 @@ export default function ShopDetails({ account, user, onSave }: Props) {
           <FieldSelect label="Contract Status" value={form.contract_status} onChange={v => setForm(f => ({ ...f, contract_status: v }))} options={CONTRACT_STATUS_OPTIONS} labels={CONTRACT_STATUS_LABELS} />
         </div>
 
-        {/* Rep Assignment — managers/admins only */}
-        {isManager && reps.length > 0 && (
+        {/* Branch + Rep Assignment — managers/admins only */}
+        {isManager && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-navy-100">
+            <div>
+              <label className="block text-xs text-navy-500 mb-1 font-semibold">Branch</label>
+              <select
+                value={form.branch}
+                onChange={e => setForm(f => ({ ...f, branch: e.target.value }))}
+                className="input-field w-full"
+              >
+                <option value="">— Unassigned —</option>
+                {BRANCH_OPTIONS.filter(b => b).map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+        {isManager && reps.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-navy-500 mb-1 font-semibold">Primary Rep</label>
               <select

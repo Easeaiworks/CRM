@@ -205,18 +205,16 @@ export default function AccountsPage({ user }: Props) {
               ))}
             </select>
           )}
-          {category === 'customer' && (
-            <select
-              value={branchFilter}
-              onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}
-              className="input-field w-auto"
-            >
-              <option value="">All Branches</option>
-              {BRANCHES.map(b => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
-          )}
+          <select
+            value={branchFilter}
+            onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}
+            className="input-field w-auto"
+          >
+            <option value="">All Branches</option>
+            {BRANCHES.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
           {/* My Accounts / All toggle */}
           <div className="flex items-center bg-navy-100 rounded-lg p-0.5">
             <button
